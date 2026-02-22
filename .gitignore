@@ -1,0 +1,27 @@
+# Build outputs
+build/
+dist/
+
+# Logs
+logs/
+
+# PyInstaller spec
+*.spec
+
+# IDE / Claude
+.claude/
+
+# Windows
+desktop.ini
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Config (선택: 민감 정보 없으면 추적해도 무방)
+# config.json
