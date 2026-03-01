@@ -26,11 +26,24 @@ from src.logger_config import setup_logger
 from src.message_monitor import run_monitor
 from src.message_parser import ChatMessage
 
-CONFIG_PATH = BASE_DIR / "config.json"
-DEFAULT_CONFIG = {"room_name": "", "poll_interval": 3, "watch_sender": ""}
+try:
+    from src.browser_controller import launch_chrome, submit_order_code
+    SELENIUM_OK = True
+except ImportError:
+    SELENIUM_OK = False
 
-# 영문+숫자 8자리 정확히 일치
-CODE_PATTERN = re.compile(r'^[A-Za-z0-9]{8}$')
+CONFIG_PATH = BASE_DIR / "config.json"
+DEFAULT_CONFIG = {
+    "room_name": "",
+    "poll_interval": 3,
+    "watch_sender": "",
+    "auto_input": False,
+    "chrome_port": 9222,
+    "site_url": "https://dsj44.com/h5/#/login",
+}
+
+# 영문+숫자 9자리 정확히 일치
+CODE_PATTERN = re.compile(r'^[A-Za-z0-9]{9}$')
 
 logger = setup_logger("app")
 
@@ -68,13 +81,13 @@ class App(tk.Tk):
 
         self.title("카카오 메시지 모니터")
         self.resizable(True, True)
-        self.minsize(540, 600)
+        self.minsize(540, 640)
 
-        # 상태
         self._monitor_thread: Optional[threading.Thread] = None
         self._stop_event: Optional[threading.Event] = None
         self._msg_queue: queue.Queue = queue.Queue()
-        self._caught_history: list[str] = []  # 코드 히스토리
+        self._caught_history: list = []
+        self._processed_codes: set = set()  # 중복 실행 방지
 
         cfg = load_config()
         self._build_ui(cfg)
@@ -87,144 +100,144 @@ class App(tk.Tk):
     # ------------------------------------------------------------------
 
     def _build_ui(self, cfg: dict) -> None:
-        # ── 설정 프레임 ──────────────────────────────────────────────
-        setting_frame = ttk.LabelFrame(self, text="설정", padding=8)
+        # ── 카카오 모니터링 설정 ──────────────────────────────────────
+        setting_frame = ttk.LabelFrame(self, text="모니터링 설정", padding=8)
         setting_frame.pack(fill=tk.X, padx=10, pady=(8, 4))
         setting_frame.columnconfigure(1, weight=1)
 
         ttk.Label(setting_frame, text="채팅방 이름:").grid(
-            row=0, column=0, sticky=tk.W, pady=2
-        )
+            row=0, column=0, sticky=tk.W, pady=2)
         self._room_var = tk.StringVar(value=cfg["room_name"])
         ttk.Entry(setting_frame, textvariable=self._room_var).grid(
-            row=0, column=1, sticky=tk.EW, padx=(6, 0), pady=2
-        )
+            row=0, column=1, columnspan=2, sticky=tk.EW, padx=(6, 0), pady=2)
 
         ttk.Label(setting_frame, text="폴링 간격:").grid(
-            row=1, column=0, sticky=tk.W, pady=2
-        )
-        interval_frame = ttk.Frame(setting_frame)
-        interval_frame.grid(row=1, column=1, sticky=tk.W, padx=(6, 0), pady=2)
+            row=1, column=0, sticky=tk.W, pady=2)
+        interval_row = ttk.Frame(setting_frame)
+        interval_row.grid(row=1, column=1, sticky=tk.W, padx=(6, 0), pady=2)
         self._interval_var = tk.StringVar(value=str(cfg["poll_interval"]))
-        ttk.Entry(interval_frame, textvariable=self._interval_var, width=6).pack(
-            side=tk.LEFT
-        )
-        ttk.Label(interval_frame, text="초").pack(side=tk.LEFT, padx=4)
+        ttk.Entry(interval_row, textvariable=self._interval_var, width=6).pack(side=tk.LEFT)
+        ttk.Label(interval_row, text="초").pack(side=tk.LEFT, padx=4)
 
         ttk.Label(setting_frame, text="발신자 필터:").grid(
-            row=2, column=0, sticky=tk.W, pady=2
-        )
+            row=2, column=0, sticky=tk.W, pady=2)
         self._sender_var = tk.StringVar(value=cfg["watch_sender"])
         ttk.Entry(setting_frame, textvariable=self._sender_var).grid(
-            row=2, column=1, sticky=tk.EW, padx=(6, 0), pady=2
-        )
+            row=2, column=1, sticky=tk.EW, padx=(6, 0), pady=2)
         ttk.Label(setting_frame, text="(비워두면 전체)", foreground="gray").grid(
-            row=2, column=2, sticky=tk.W, padx=4
-        )
+            row=2, column=2, sticky=tk.W, padx=4)
 
         self._topmost_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
-            setting_frame,
-            text="항상 위",
-            variable=self._topmost_var,
-            command=self._toggle_topmost,
-        ).grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=(4, 0))
+            setting_frame, text="항상 위",
+            variable=self._topmost_var, command=self._toggle_topmost,
+        ).grid(row=3, column=0, columnspan=3, sticky=tk.W, pady=(4, 0))
+
+        # ── 자동 입력 설정 ────────────────────────────────────────────
+        auto_frame = ttk.LabelFrame(self, text="자동 입력 설정 (Chrome 원격 디버깅)", padding=8)
+        auto_frame.pack(fill=tk.X, padx=10, pady=4)
+        auto_frame.columnconfigure(1, weight=1)
+
+        self._auto_var = tk.BooleanVar(value=cfg.get("auto_input", False))
+        auto_check = ttk.Checkbutton(
+            auto_frame,
+            text="코드 캐치 시 자동으로 사이트에 입력",
+            variable=self._auto_var,
+        )
+        auto_check.grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 4))
+
+        if not SELENIUM_OK:
+            ttk.Label(auto_frame, text="⚠ selenium 미설치 — 자동 입력 불가",
+                      foreground="#f44747").grid(
+                row=1, column=0, columnspan=3, sticky=tk.W)
+            self._auto_var.set(False)
+            auto_check.config(state=tk.DISABLED)
+
+        ttk.Label(auto_frame, text="사이트 주소:").grid(
+            row=2, column=0, sticky=tk.W, pady=2)
+        self._site_url_var = tk.StringVar(value=cfg.get("site_url", "https://dsj44.com/h5/#/login"))
+        ttk.Entry(auto_frame, textvariable=self._site_url_var).grid(
+            row=2, column=1, columnspan=2, sticky=tk.EW, padx=(6, 0), pady=2)
+
+        ttk.Label(auto_frame, text="Chrome 포트:").grid(
+            row=3, column=0, sticky=tk.W, pady=2)
+        port_row = ttk.Frame(auto_frame)
+        port_row.grid(row=3, column=1, sticky=tk.W, padx=(6, 0), pady=2)
+        self._port_var = tk.StringVar(value=str(cfg.get("chrome_port", 9222)))
+        ttk.Entry(port_row, textvariable=self._port_var, width=7).pack(side=tk.LEFT)
+        ttk.Label(port_row, text="(기본 9222)", foreground="gray").pack(
+            side=tk.LEFT, padx=6)
 
         # ── 제어 버튼 ─────────────────────────────────────────────────
         btn_frame = ttk.Frame(self)
         btn_frame.pack(fill=tk.X, padx=10, pady=4)
 
         self._start_btn = ttk.Button(
-            btn_frame, text="▶ 모니터링 시작", command=self._start_monitor
-        )
+            btn_frame, text="▶ 모니터링 시작", command=self._start_monitor)
         self._start_btn.pack(side=tk.LEFT, padx=(0, 4))
 
         self._stop_btn = ttk.Button(
-            btn_frame, text="■ 중지", command=self._stop_monitor, state=tk.DISABLED
-        )
+            btn_frame, text="■ 중지", command=self._stop_monitor, state=tk.DISABLED)
         self._stop_btn.pack(side=tk.LEFT, padx=4)
 
         ttk.Button(btn_frame, text="로그 지우기", command=self._clear_log).pack(
-            side=tk.LEFT, padx=4
-        )
+            side=tk.LEFT, padx=4)
 
         # ── 캐치 패널 ─────────────────────────────────────────────────
-        catch_frame = ttk.LabelFrame(self, text="캐치된 코드  (영숫자 8자리)", padding=8)
+        catch_frame = ttk.LabelFrame(self, text="캐치된 코드  (영숫자 9자리)", padding=8)
         catch_frame.pack(fill=tk.X, padx=10, pady=4)
 
-        # 최신 코드 — 크게 표시
         code_box = tk.Frame(catch_frame, bg="#0d1117", relief=tk.FLAT, bd=1)
         code_box.pack(fill=tk.X, pady=(0, 6))
 
         self._latest_code_var = tk.StringVar(value="—")
-        tk.Label(
-            code_box,
-            textvariable=self._latest_code_var,
-            font=("Consolas", 36, "bold"),
-            fg="#f0c040",
-            bg="#0d1117",
-            pady=12,
-        ).pack()
+        tk.Label(code_box, textvariable=self._latest_code_var,
+                 font=("Consolas", 36, "bold"), fg="#f0c040", bg="#0d1117",
+                 pady=12).pack()
 
         self._latest_meta_var = tk.StringVar(value="대기 중...")
-        tk.Label(
-            code_box,
-            textvariable=self._latest_meta_var,
-            font=("Consolas", 9),
-            fg="#8b949e",
-            bg="#0d1117",
-            pady=2,
-        ).pack()
+        tk.Label(code_box, textvariable=self._latest_meta_var,
+                 font=("Consolas", 9), fg="#8b949e", bg="#0d1117",
+                 pady=2).pack()
 
-        # 히스토리 — 작게 한 줄
         hist_frame = tk.Frame(catch_frame, bg=self.cget("bg"))
         hist_frame.pack(fill=tk.X)
-        tk.Label(hist_frame, text="이전:", font=("Consolas", 9), fg="gray").pack(
-            side=tk.LEFT
-        )
+        tk.Label(hist_frame, text="이전:", font=("Consolas", 9), fg="gray").pack(side=tk.LEFT)
         self._history_var = tk.StringVar(value="없음")
-        tk.Label(
-            hist_frame,
-            textvariable=self._history_var,
-            font=("Consolas", 9),
-            fg="#4ec9b0",
-        ).pack(side=tk.LEFT, padx=4)
+        tk.Label(hist_frame, textvariable=self._history_var,
+                 font=("Consolas", 9), fg="#4ec9b0").pack(side=tk.LEFT, padx=4)
 
         # ── 전체 메시지 로그 ──────────────────────────────────────────
         log_frame = ttk.LabelFrame(self, text="전체 메시지 로그", padding=4)
         log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=4)
 
         self._log = tk.Text(
-            log_frame,
-            state=tk.DISABLED,
-            background="#1e1e1e",
-            foreground="#d4d4d4",
-            insertbackground="#d4d4d4",
-            relief=tk.FLAT,
-            wrap=tk.WORD,
-            font=("Consolas", 10),
+            log_frame, state=tk.DISABLED,
+            background="#1e1e1e", foreground="#d4d4d4",
+            insertbackground="#d4d4d4", relief=tk.FLAT,
+            wrap=tk.WORD, font=("Consolas", 10),
         )
         scrollbar = ttk.Scrollbar(log_frame, command=self._log.yview)
         self._log.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self._log.pack(fill=tk.BOTH, expand=True)
 
-        # 로그 컬러 태그
         self._log.tag_configure("timestamp", foreground="#569cd6")
         self._log.tag_configure("sender", foreground="#4ec9b0",
                                 font=("Consolas", 10, "bold"))
         self._log.tag_configure("system", foreground="#6a9955",
                                 font=("Consolas", 10, "italic"))
         self._log.tag_configure("error", foreground="#f44747")
-        # 캐치된 메시지는 노란색 굵게 강조
         self._log.tag_configure("caught_code", foreground="#f0c040",
                                 font=("Consolas", 10, "bold"))
+        self._log.tag_configure("auto_ok", foreground="#4ec9b0",
+                                font=("Consolas", 10, "italic"))
 
         # ── 상태바 ────────────────────────────────────────────────────
         self._status_var = tk.StringVar(value="대기 중")
-        ttk.Label(
-            self, textvariable=self._status_var, relief=tk.SUNKEN, anchor=tk.W
-        ).pack(fill=tk.X, padx=10, pady=(0, 6))
+        ttk.Label(self, textvariable=self._status_var,
+                  relief=tk.SUNKEN, anchor=tk.W).pack(
+            fill=tk.X, padx=10, pady=(0, 6))
 
     # ------------------------------------------------------------------
     # 제어
@@ -244,10 +257,18 @@ class App(tk.Tk):
 
         watch_sender = self._sender_var.get().strip()
 
+        try:
+            chrome_port = int(self._port_var.get())
+        except ValueError:
+            chrome_port = 9222
+
         save_config({
             "room_name": room_name,
             "poll_interval": poll_interval,
             "watch_sender": watch_sender,
+            "auto_input": self._auto_var.get(),
+            "chrome_port": chrome_port,
+            "site_url": self._site_url_var.get().strip(),
         })
 
         self._stop_event = threading.Event()
@@ -272,6 +293,7 @@ class App(tk.Tk):
     def _stop_monitor(self) -> None:
         if self._stop_event:
             self._stop_event.set()
+        self._processed_codes.clear()
         self._start_btn.config(state=tk.NORMAL)
         self._stop_btn.config(state=tk.DISABLED)
         self._status_var.set("중지됨")
@@ -303,6 +325,10 @@ class App(tk.Tk):
                 item = self._msg_queue.get_nowait()
                 if isinstance(item, ChatMessage):
                     self._handle_message(item)
+                elif isinstance(item, tuple):
+                    # (tag, text) 형식
+                    tag, text = item
+                    self._append_log(text, tag=tag)
                 elif isinstance(item, str):
                     self._append_log(item, tag="system")
         except queue.Empty:
@@ -328,7 +354,6 @@ class App(tk.Tk):
         code = msg.content.strip()
         is_code = bool(CODE_PATTERN.match(code))
 
-        # 로그에 항상 출력 (캐치된 코드는 노란색 강조)
         self._log.config(state=tk.NORMAL)
         self._log.insert(tk.END, f"[{msg.timestamp_str}] ", "timestamp")
         self._log.insert(tk.END, f"{msg.sender}", "sender")
@@ -340,29 +365,54 @@ class App(tk.Tk):
         self._log.see(tk.END)
         self._log.config(state=tk.DISABLED)
 
-        # 캐치 패널 업데이트
         if is_code:
             self._update_catch_panel(code, msg.timestamp_str, msg.sender)
 
     def _update_catch_panel(self, code: str, ts: str, sender: str) -> None:
-        # 히스토리에 현재 최신값 밀어넣기
         current = self._latest_code_var.get()
         if current != "—":
             self._caught_history.insert(0, current)
-            self._caught_history = self._caught_history[:8]  # 최대 8개 보관
+            self._caught_history = self._caught_history[:8]
 
-        # 최신 코드 표시
         self._latest_code_var.set(code)
         self._latest_meta_var.set(f"{ts}  |  {sender}")
 
-        # 히스토리 한 줄 표시
         if self._caught_history:
             self._history_var.set("  ".join(self._caught_history))
         else:
             self._history_var.set("없음")
 
-        # 상태바에도 반영
         self._status_var.set(f"코드 캐치: {code}  ({ts} / {sender})")
+
+        # 자동 입력 트리거 (중복 코드 무시)
+        if SELENIUM_OK and self._auto_var.get():
+            if code in self._processed_codes:
+                self._append_log(f"중복 코드 무시: {code}", tag="system")
+                return
+            self._processed_codes.add(code)
+            try:
+                port = int(self._port_var.get())
+            except ValueError:
+                port = 9222
+            site_url = self._site_url_var.get().strip()
+            threading.Thread(
+                target=self._run_auto_input,
+                args=(code, port, site_url),
+                daemon=True,
+            ).start()
+
+    def _run_auto_input(self, code: str, port: int, site_url: str) -> None:
+        """백그라운드 스레드에서 브라우저 자동 입력 실행."""
+        self._msg_queue.put(("system", f"→ 자동 입력 시도: {code}"))
+        try:
+            submit_order_code(code, port, site_url)
+            self._msg_queue.put(("auto_ok", f"✓ 자동 입력 완료: {code}"))
+        except Exception as e:
+            self._msg_queue.put(("error", f"✗ 자동 입력 실패: {e}"))
+
+    # ------------------------------------------------------------------
+    # 로그 출력
+    # ------------------------------------------------------------------
 
     def _append_log(self, text: str, tag: str = "") -> None:
         self._log.config(state=tk.NORMAL)
