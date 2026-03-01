@@ -27,7 +27,7 @@ from src.message_monitor import run_monitor
 from src.message_parser import ChatMessage
 
 try:
-    from src.browser_controller import launch_chrome, submit_order_code
+    from src.browser_controller import AutoCancelled, submit_order_code
     SELENIUM_OK = True
 except ImportError:
     SELENIUM_OK = False
@@ -85,6 +85,7 @@ class App(tk.Tk):
 
         self._monitor_thread: Optional[threading.Thread] = None
         self._stop_event: Optional[threading.Event] = None
+        self._auto_cancel_event: threading.Event = threading.Event()
         self._msg_queue: queue.Queue = queue.Queue()
         self._caught_history: list = []
         self._processed_codes: set = set()  # 중복 실행 방지
@@ -272,6 +273,7 @@ class App(tk.Tk):
         })
 
         self._stop_event = threading.Event()
+        self._auto_cancel_event.clear()  # 이전 취소 상태 초기화
         self._monitor_thread = threading.Thread(
             target=run_monitor,
             kwargs={
@@ -293,6 +295,7 @@ class App(tk.Tk):
     def _stop_monitor(self) -> None:
         if self._stop_event:
             self._stop_event.set()
+        self._auto_cancel_event.set()  # 진행 중인 자동 입력도 취소
         self._processed_codes.clear()
         self._start_btn.config(state=tk.NORMAL)
         self._stop_btn.config(state=tk.DISABLED)
@@ -385,6 +388,12 @@ class App(tk.Tk):
         self._status_var.set(f"코드 캐치: {code}  ({ts} / {sender})")
 
         # 자동 입력 트리거 (중복 코드 무시)
+        if not SELENIUM_OK:
+            self._append_log("⚠ selenium 미설치 — 자동 입력 불가", tag="error")
+            return
+        if not self._auto_var.get():
+            self._append_log("ℹ 자동 입력 비활성 (체크박스 확인)", tag="system")
+            return
         if SELENIUM_OK and self._auto_var.get():
             if code in self._processed_codes:
                 self._append_log(f"중복 코드 무시: {code}", tag="system")
@@ -403,10 +412,23 @@ class App(tk.Tk):
 
     def _run_auto_input(self, code: str, port: int, site_url: str) -> None:
         """백그라운드 스레드에서 브라우저 자동 입력 실행."""
+        if self._auto_cancel_event.is_set():
+            return  # 시작 전 이미 취소됨
+
         self._msg_queue.put(("system", f"→ 자동 입력 시도: {code}"))
+
+        def _status(msg: str) -> None:
+            self._msg_queue.put(("system", f"  · {msg}"))
+
         try:
-            submit_order_code(code, port, site_url)
+            submit_order_code(
+                code, port, site_url,
+                status_cb=_status,
+                cancel_event=self._auto_cancel_event,
+            )
             self._msg_queue.put(("auto_ok", f"✓ 자동 입력 완료: {code}"))
+        except AutoCancelled:
+            self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
         except Exception as e:
             self._msg_queue.put(("error", f"✗ 자동 입력 실패: {e}"))
 
