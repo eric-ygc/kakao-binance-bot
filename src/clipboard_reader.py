@@ -3,7 +3,7 @@
 
 주요 함정 대응:
   - Windows 11 SetForegroundWindow 제한: AllowSetForegroundWindow(-1) 우회
-  - Ctrl+A가 입력창을 잡는 문제: 전송 전 채팅 내역 영역(창 상단 35% 지점)을 클릭
+  - Ctrl+A가 입력창을 잡는 문제: 타이틀바 바로 아래(창 상단 8% 지점)를 클릭 → 이미지 클릭 방지
   - 클립보드 경쟁 조건: GetClipboardSequenceNumber 폴링으로 업데이트 감지
 """
 import ctypes
@@ -40,11 +40,12 @@ def _get_clipboard_seq() -> int:
 def _click_chat_area(hwnd: int) -> None:
     """
     채팅 내역 영역을 클릭하여 Ctrl+A 가 입력창 대신 내역을 선택하도록 함.
-    창 가로 중앙, 세로 35% 지점을 클릭한다.
+    타이틀바 바로 아래(세로 8% 지점)를 클릭한다.
+    → 최근 메시지(이미지 포함)는 창 하단에 쌓이므로 상단 클릭 시 이미지 선택 위험 없음.
     """
     rect = win32gui.GetWindowRect(hwnd)
     x = rect[0] + (rect[2] - rect[0]) // 2
-    y = rect[1] + int((rect[3] - rect[1]) * 0.35)
+    y = rect[1] + int((rect[3] - rect[1]) * 0.08)
 
     ctypes.windll.user32.SetCursorPos(x, y)
     ctypes.windll.user32.mouse_event(0x0002, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTDOWN
