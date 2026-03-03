@@ -485,7 +485,7 @@ class App(tk.Tk):
         ).start()
 
     def _run_auto_input(self, code: str, port: int, site_urls: list) -> None:
-        """백그라운드 스레드에서 브라우저 자동 입력 실행."""
+        """백그라운드 스레드에서 브라우저 자동 입력 실행 — 등록된 계정 전부 순차 처리."""
         if self._auto_cancel_event.is_set():
             return
 
@@ -493,30 +493,45 @@ class App(tk.Tk):
             self._msg_queue.put(("error", "⚠ 등록된 계정이 없습니다. [계정 관리]에서 추가하세요."))
             return
 
-        # 현재 계정 캡처 (스레드 시작 시점 기준)
-        acct_idx = self._account_idx % len(self._accounts)
-        acct = self._accounts[acct_idx]
-        acct_label = f"[{acct_idx + 1}/{len(self._accounts)}] {acct['email']}"
+        accounts = list(self._accounts)  # 스레드 시작 시점 스냅샷
+        total = len(accounts)
+        self._msg_queue.put(("system", f"━━ 자동 입력 시작: {code} | 총 {total}개 계정 순차 처리 ━━"))
 
-        self._msg_queue.put(("system", f"→ 자동 입력 시도: {code} | 계정: {acct_label}"))
+        success_count = 0
+        fail_count = 0
 
-        def _status(msg: str) -> None:
-            self._msg_queue.put(("system", f"  · {msg}"))
+        for i, acct in enumerate(accounts):
+            if self._auto_cancel_event.is_set():
+                self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
+                return
 
-        try:
-            submit_order_code(
-                code, port, site_urls,
-                email=acct["email"],
-                password=acct["password"],
-                status_cb=_status,
-                cancel_event=self._auto_cancel_event,
-            )
-            self._msg_queue.put(("auto_ok", f"✓ 자동 입력 완료: {code} | {acct_label}"))
-            self._advance_account()
-        except AutoCancelled:
-            self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
-        except Exception as e:
-            self._msg_queue.put(("error", f"✗ 자동 입력 실패: {e}"))
+            acct_label = f"[{i + 1}/{total}] {acct['email']}"
+            self._msg_queue.put(("system", f"→ {acct_label} 처리 중..."))
+
+            def _status(msg: str) -> None:
+                self._msg_queue.put(("system", f"  · {msg}"))
+
+            try:
+                submit_order_code(
+                    code, port, site_urls,
+                    email=acct["email"],
+                    password=acct["password"],
+                    status_cb=_status,
+                    cancel_event=self._auto_cancel_event,
+                )
+                self._msg_queue.put(("auto_ok", f"✓ 완료: {acct_label}"))
+                success_count += 1
+            except AutoCancelled:
+                self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
+                return
+            except Exception as e:
+                self._msg_queue.put(("error", f"✗ 실패: {acct_label} — {e}"))
+                fail_count += 1
+
+        self._msg_queue.put((
+            "auto_ok" if fail_count == 0 else "system",
+            f"━━ 전체 완료: {code} | 성공 {success_count} / 실패 {fail_count} / 총 {total} ━━",
+        ))
 
     # ------------------------------------------------------------------
     # 로그 출력
