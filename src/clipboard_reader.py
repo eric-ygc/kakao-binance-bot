@@ -39,17 +39,20 @@ def _get_clipboard_seq() -> int:
 
 def _click_chat_area(hwnd: int) -> None:
     """
-    채팅 내역 영역을 클릭하여 Ctrl+A 가 입력창 대신 내역을 선택하도록 함.
-    창 가로 중앙, 세로 35% 지점을 클릭한다.
+    채팅 내역 영역에 포커스를 주어 Ctrl+A 가 입력창 대신 내역을 선택하도록 함.
+    우클릭으로 컨텍스트 메뉴만 띄운 뒤 Escape 로 닫는다.
+    → 이미지를 좌클릭해서 뷰어가 열리는 문제 방지.
     """
     rect = win32gui.GetWindowRect(hwnd)
     x = rect[0] + (rect[2] - rect[0]) // 2
     y = rect[1] + int((rect[3] - rect[1]) * 0.35)
 
     ctypes.windll.user32.SetCursorPos(x, y)
-    ctypes.windll.user32.mouse_event(0x0002, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTDOWN
+    ctypes.windll.user32.mouse_event(0x0008, 0, 0, 0, 0)  # MOUSEEVENTF_RIGHTDOWN
     time.sleep(0.05)
-    ctypes.windll.user32.mouse_event(0x0004, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTUP
+    ctypes.windll.user32.mouse_event(0x0010, 0, 0, 0, 0)  # MOUSEEVENTF_RIGHTUP
+    time.sleep(0.15)
+    keyboard.send_keys('{ESCAPE}')  # 컨텍스트 메뉴 닫기 (포커스 유지)
     time.sleep(0.1)
 
 

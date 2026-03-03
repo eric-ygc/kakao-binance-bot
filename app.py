@@ -39,7 +39,7 @@ DEFAULT_CONFIG = {
     "watch_sender": "",
     "auto_input": False,
     "chrome_port": 9222,
-    "site_url": "https://dsj44.com/h5/#/login",
+    "site_urls": ["https://dsj44.com/h5/#/login", "", "", "", ""],
 }
 
 # 영문+숫자 9자리 정확히 일치
@@ -154,16 +154,27 @@ class App(tk.Tk):
             self._auto_var.set(False)
             auto_check.config(state=tk.DISABLED)
 
-        ttk.Label(auto_frame, text="사이트 주소:").grid(
-            row=2, column=0, sticky=tk.W, pady=2)
-        self._site_url_var = tk.StringVar(value=cfg.get("site_url", "https://dsj44.com/h5/#/login"))
-        ttk.Entry(auto_frame, textvariable=self._site_url_var).grid(
-            row=2, column=1, columnspan=2, sticky=tk.EW, padx=(6, 0), pady=2)
+        # 사이트 주소 5개 (실패 시 순서대로 시도)
+        saved_urls = cfg.get("site_urls", DEFAULT_CONFIG["site_urls"])
+        # 구버전 config 호환 (site_url 단일 문자열)
+        if isinstance(saved_urls, str):
+            saved_urls = [saved_urls, "", "", "", ""]
+        while len(saved_urls) < 5:
+            saved_urls.append("")
+
+        self._site_url_vars = []
+        for i in range(5):
+            ttk.Label(auto_frame, text=f"사이트 {i+1}:").grid(
+                row=2 + i, column=0, sticky=tk.W, pady=2)
+            var = tk.StringVar(value=saved_urls[i])
+            self._site_url_vars.append(var)
+            ttk.Entry(auto_frame, textvariable=var).grid(
+                row=2 + i, column=1, columnspan=2, sticky=tk.EW, padx=(6, 0), pady=2)
 
         ttk.Label(auto_frame, text="Chrome 포트:").grid(
-            row=3, column=0, sticky=tk.W, pady=2)
+            row=7, column=0, sticky=tk.W, pady=2)
         port_row = ttk.Frame(auto_frame)
-        port_row.grid(row=3, column=1, sticky=tk.W, padx=(6, 0), pady=2)
+        port_row.grid(row=7, column=1, sticky=tk.W, padx=(6, 0), pady=2)
         self._port_var = tk.StringVar(value=str(cfg.get("chrome_port", 9222)))
         ttk.Entry(port_row, textvariable=self._port_var, width=7).pack(side=tk.LEFT)
         ttk.Label(port_row, text="(기본 9222)", foreground="gray").pack(
@@ -269,7 +280,7 @@ class App(tk.Tk):
             "watch_sender": watch_sender,
             "auto_input": self._auto_var.get(),
             "chrome_port": chrome_port,
-            "site_url": self._site_url_var.get().strip(),
+            "site_urls": [v.get().strip() for v in self._site_url_vars],
         })
 
         self._stop_event = threading.Event()
@@ -403,10 +414,13 @@ class App(tk.Tk):
                 port = int(self._port_var.get())
             except ValueError:
                 port = 9222
-            site_url = self._site_url_var.get().strip()
+            site_urls = [v.get().strip() for v in self._site_url_vars if v.get().strip()]
+            if not site_urls:
+                self._append_log("⚠ 사이트 주소를 입력하세요.", tag="error")
+                return
             threading.Thread(
                 target=self._run_auto_input,
-                args=(code, port, site_url),
+                args=(code, port, site_urls),
                 daemon=True,
             ).start()
 

@@ -1,14 +1,14 @@
 # 개발 계획서: 카카오톡 메시지 기반 바이낸스 자동 입력 시스템
 
-> 최종 업데이트: 2026-02-22
+> 최종 업데이트: 2026-03-03
 
 ## 1. 프로젝트 개요
 
 **목표:** PC 카카오톡 특정 단톡방의 메시지를 실시간 모니터링하여,
-영문+숫자 8자리 코드가 수신되면 이미 로그인된 바이낸스 브라우저의
-특정 입력창에 자동으로 입력하고 버튼을 클릭하는 프로그램.
+영문+숫자 8자리 코드가 수신되면 지정된 사이트(최대 5개 순차 시도)에
+자동으로 로그인 후 코드를 입력하고 버튼을 클릭하는 프로그램.
 
-**핵심 도구:** Python, tkinter, PyWinAuto, pyperclip, Selenium (Chrome Debugging)
+**핵심 도구:** Python, tkinter, PyWinAuto, pywin32, Selenium (직접 실행 방식)
 
 ---
 
@@ -22,7 +22,7 @@
 - 카카오톡은 Direct2D 커스텀 렌더러 사용 → Win32 텍스트 컨트롤에 접근 불가
 - **클립보드 방식 채택**: Ctrl+A → Ctrl+C로 전체 대화 복사
 - 채팅방은 반드시 **팝업 분리** 형태 필요 (더블클릭으로 별도 창)
-- 창 클래스명: 메인창 `EVA_Window_Dblclk`, 팝업 `EVA_Window`
+- 창 클래스명: 메인창 `EVA_Window_Dblclk`, 팝업 `EVA_Window_Dblclk`
 
 **구현 파일:**
 
@@ -41,7 +41,7 @@
 
 **주요 해결 이슈:**
 - Windows 11 SetForegroundWindow 차단 → `AllowSetForegroundWindow(-1)` 선행
-- Ctrl+A가 입력창 선택 → 창 상단 35% 지점 클릭 후 실행
+- Ctrl+A가 입력창 선택 → 창 상단 35% 지점 우클릭 후 실행 (이미지 뷰어 방지)
 - 클립보드 타이밍 → `GetClipboardSequenceNumber` 폴링 (최대 3초)
 
 ---
@@ -52,7 +52,7 @@
 
 **구현:**
 - `app.py` — tkinter 기반 GUI
-- `dist/카카오모니터.exe` — PyInstaller 단일 파일 (16 MB)
+- `dist/카카오모니터.exe` — PyInstaller 단일 파일
 - `config.json` — 설정 자동 저장/복원 (exe 옆에 생성)
 
 **GUI 구성:**
@@ -79,9 +79,9 @@
 
 ### Phase 3: 코드 캐치 ✅ 완료
 
-**목표:** 수신 메시지 중 특정 패턴(영문+숫자 9자리)만 별도 강조 표시
+**목표:** 수신 메시지 중 특정 패턴(영문+숫자 8자리)만 별도 강조 표시
 
-**규칙:** 정규식 `^[A-Za-z0-9]{9}$` 정확히 일치 시 캐치
+**규칙:** 정규식 `^[A-Za-z0-9]{8}$` 정확히 일치 시 캐치
 
 **캐치 패널:**
 - 최신 코드: 36pt 대형 노란색 폰트
@@ -94,20 +94,29 @@
 
 ---
 
-### Phase 4: 바이낸스 브라우저 자동 입력 🔲 미착수
+### Phase 4: 브라우저 자동 입력 ✅ 완료
 
-**목표:** 캐치된 8자리 코드를 바이낸스 입력창에 자동 입력 + 버튼 클릭
+**목표:** 캐치된 8자리 코드를 지정 사이트 입력창에 자동 입력 + 버튼 클릭
 
-**기술 스택:** Selenium (Chrome Remote Debugging, 포트 9222)
-- API Key 미사용 — DOM 직접 제어 방식
+**기술 결정:**
+- ~~Chrome Remote Debugging (debuggerAddress)~~ → 폐기 (exe 환경에서 포트 잔여·TIME_WAIT 불안정)
+- **Selenium 직접 실행 채택**: `webdriver.Chrome(options)` — Chrome 완전 소유, `driver.quit()` 확실히 종료
+- `--user-data-dir` 제거: 프로필 잠금/세션 복원이 `driver.get()` 실패 유발 → 매번 새 세션 + 자동 로그인
+- **5개 사이트 순차 시도**: 1번 실패 시 2번, 2번 실패 시 3번... 순서로 자동 재시도
 
-**작업 항목:**
-- [ ] 크롬 디버깅 포트(9222) 실행 스크립트
-- [ ] Selenium으로 현재 열린 바이낸스 탭 연결
-- [ ] 입력창 DOM 요소 탐색 (`driver.find_element`)
-- [ ] `send_keys(code)` 입력 + 버튼 클릭
-- [ ] GUI 앱 연동 — 코드 캐치 시 자동 트리거
-- [ ] `requirements.txt`에 `selenium` 추가 및 exe 재빌드
+**자동화 흐름 (단일 사이트):**
+1. `https://<사이트>/h5/#/login` 접속
+2. 이메일 / 비밀번호 입력 후 로그인 (세션 유지 시 생략)
+3. PC 버전으로 리다이렉트되면 h5 홈으로 강제 이동
+4. 'Quickly buy coin / Safe and Convenient' 클릭
+5. 'Invited me' 클릭
+6. 코드 입력 → Confirm 클릭
+
+**구현 파일:**
+
+| 파일 | 역할 |
+|------|------|
+| `src/browser_controller.py` | Selenium Chrome 실행·로그인·코드 입력 전체 흐름 |
 
 ---
 
@@ -115,12 +124,11 @@
 
 | 구분 | 라이브러리 | 용도 |
 |------|-----------|------|
-| 현재 사용 | pywinauto | 카카오톡 창 제어 |
+| 현재 사용 | pywinauto | 카카오톡 창 제어 (키 입력) |
 | 현재 사용 | pywin32 | Windows API (클립보드, 포그라운드) |
-| 현재 사용 | pyperclip | 클립보드 읽기 |
 | 현재 사용 | tkinter | GUI |
 | 현재 사용 | PyInstaller | exe 패키징 |
-| Phase 4 예정 | selenium | 바이낸스 브라우저 제어 |
+| 현재 사용 | selenium | 브라우저 자동 입력 |
 
 **환경:** Windows 11, Python 3.12
 
@@ -140,7 +148,8 @@ kakao-binance-bot/
 │   ├── window_finder.py
 │   ├── clipboard_reader.py
 │   ├── message_parser.py
-│   └── message_monitor.py
+│   ├── message_monitor.py
+│   └── browser_controller.py
 ├── tests/
 │   ├── test_message_parser.py   # 독립 실행 가능
 │   ├── test_window_finder.py    # 카카오톡 실행 필요
