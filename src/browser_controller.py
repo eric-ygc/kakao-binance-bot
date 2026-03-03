@@ -79,6 +79,65 @@ def _ci(field: str) -> str:
     return f"translate({field},'{U}','{L}')"
 
 
+def _check_submit_result(driver, _st, timeout: float = 5.0) -> None:
+    """
+    Confirm 클릭 후 결과 메시지를 폴링하여 성공/실패를 판별한다.
+    에러 키워드가 감지되면 RuntimeError 발생.
+    타임아웃까지 에러 미감지 시 성공으로 간주.
+    """
+    ERROR_KEYWORDS = [
+        "fail", "error", "invalid", "already", "incorrect", "wrong",
+        "expired", "not found", "unsuccessful", "denied", "exist",
+        "used", "repeat", "duplicate",
+    ]
+    SUCCESS_KEYWORDS = [
+        "success", "complete", "done", "submitted", "received", "ok",
+    ]
+
+    # 토스트·알림·팝업 컨테이너 후보
+    CONTAINER_XPATH = (
+        "//*["
+        "  contains(@class,'toast') or contains(@class,'alert') or"
+        "  contains(@class,'tip') or contains(@class,'notice') or"
+        "  contains(@class,'snack') or contains(@class,'msg') or"
+        "  contains(@class,'popup') or contains(@class,'result') or"
+        "  contains(@class,'modal-body') or contains(@class,'van-toast') or"
+        "  contains(@class,'van-dialog') or contains(@class,'van-notify')"
+        "]"
+    )
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            elements = driver.find_elements(By.XPATH, CONTAINER_XPATH)
+            for el in elements:
+                try:
+                    if not el.is_displayed():
+                        continue
+                    text = el.text.strip()
+                    if not text:
+                        continue
+                    text_lower = text.lower()
+                    for kw in ERROR_KEYWORDS:
+                        if kw in text_lower:
+                            raise RuntimeError(f"제출 실패 — 사이트 응답: {text}")
+                    for kw in SUCCESS_KEYWORDS:
+                        if kw in text_lower:
+                            _st(f"성공 확인: {text}")
+                            return
+                except RuntimeError:
+                    raise
+                except Exception:
+                    pass
+        except RuntimeError:
+            raise
+        except Exception:
+            pass
+        time.sleep(0.3)
+
+    _st("결과 메시지 미감지 → 성공으로 간주")
+
+
 # ---------------------------------------------------------------------------
 # 공개 API
 # ---------------------------------------------------------------------------
@@ -189,8 +248,11 @@ def _do_submit(driver, code: str, login_url: str, email: str, password: str, _st
         ),
         label="confirm 버튼",
     )
-    _st("Confirm 완료 — 결과 확인 중...")
-    time.sleep(3)
+    time.sleep(2)
+
+    # ── Step 9: 결과 확인 ────────────────────────────────────────
+    _st("결과 확인 중...")
+    _check_submit_result(driver, _st, timeout=5.0)
 
 
 def submit_order_code(
