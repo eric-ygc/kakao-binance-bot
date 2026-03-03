@@ -11,7 +11,6 @@ dsj44.com 주문 코드 자동 입력 모듈.
 """
 import logging
 import time
-from pathlib import Path
 
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
@@ -24,9 +23,6 @@ logger = logging.getLogger("browser_controller")
 LOGIN_URL = "https://dsj44.com/h5/#/login"
 HOME_URL  = "https://dsj44.com/h5/#/home"
 PC_HOST   = "dsj44.com/PC"
-
-EMAIL    = "msdsgb@gmail.com"
-PASSWORD = "qwer1234"
 
 TIMEOUT = 15
 
@@ -87,7 +83,7 @@ def _ci(field: str) -> str:
 # 공개 API
 # ---------------------------------------------------------------------------
 
-def _do_submit(driver, code: str, login_url: str, _st) -> None:
+def _do_submit(driver, code: str, login_url: str, email: str, password: str, _st) -> None:
     """단일 사이트에서 코드 입력 전체 흐름."""
     wait = WebDriverWait(driver, TIMEOUT)
 
@@ -110,7 +106,7 @@ def _do_submit(driver, code: str, login_url: str, _st) -> None:
     # ── Step 3: 로그인 필요 시 이메일/비밀번호 입력 ───────────────
     if "login" in driver.current_url.lower() or \
             driver.current_url.rstrip("/") == login_url.rstrip("/"):
-        _st("로그인 필요 → 이메일/비밀번호 입력 중...")
+        _st(f"로그인 필요 → {email} 로그인 중...")
         try:
             email_input = wait.until(EC.visibility_of_element_located((By.XPATH,
                 "//input[contains(@placeholder,'email') or contains(@placeholder,'Email')]"
@@ -120,10 +116,10 @@ def _do_submit(driver, code: str, login_url: str, _st) -> None:
             )
             if not email_input.get_attribute("value"):
                 email_input.clear()
-                email_input.send_keys(EMAIL)
+                email_input.send_keys(email)
             if not pw_input.get_attribute("value"):
                 pw_input.clear()
-                pw_input.send_keys(PASSWORD)
+                pw_input.send_keys(password)
             login_btn = wait.until(EC.presence_of_element_located(
                 (By.XPATH, "//div[contains(@class,'login-btn')]")
             ))
@@ -201,11 +197,13 @@ def submit_order_code(
     code: str,
     port: int = 9222,           # 하위 호환용, 현재 미사용
     login_url=LOGIN_URL,        # str 또는 list[str]
+    email: str = "",
+    password: str = "",
     status_cb=None,
     cancel_event=None,
 ) -> None:
     """
-    지정 사이트에 로그인 후 9자리 코드 자동 입력.
+    지정 사이트에 로그인 후 코드 자동 입력.
     login_url이 리스트인 경우 실패 시 다음 URL로 순서대로 시도.
     """
     if cancel_event and cancel_event.is_set():
@@ -224,7 +222,7 @@ def submit_order_code(
     if not urls:
         urls = [LOGIN_URL]
 
-    _st(f"자동 입력 시작 | code={code} | 사이트 {len(urls)}개")
+    _st(f"자동 입력 시작 | code={code} | 계정={email} | 사이트 {len(urls)}개")
 
     last_error = None
     for idx, url in enumerate(urls):
@@ -232,7 +230,7 @@ def submit_order_code(
             _st(f"[{idx+1}/{len(urls)}] {url}")
         driver = _open_driver(status_cb)
         try:
-            _do_submit(driver, code, url, _st)
+            _do_submit(driver, code, url, email, password, _st)
             _st("자동 입력 완료!")
             return  # 성공
         except Exception as e:
