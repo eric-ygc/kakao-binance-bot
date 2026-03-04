@@ -302,21 +302,27 @@ class App(tk.Tk):
     def _make_card(self, parent: tk.Widget, title: str = "") -> tk.Frame:
         """
         Bento Grid 카드 생성.
-        outer (border 색 배경, 1px 두께) > inner (panel 배경, 패딩) 구조.
-        outer 를 grid() 로 배치하고, inner(content) 를 반환한다.
+        outer(border) > inner(panel) > pad(패딩) 구조.
+        타이틀이 있으면 pad 안에 label(pack) + body(pack) 로 분리하여
+        body 안에서 grid/pack 을 자유롭게 사용할 수 있도록 한다.
+        반환값(body)의 ._outer 속성으로 외부에서 grid 배치.
         """
         outer = tk.Frame(parent, bg=C["border"])
         inner = tk.Frame(outer, bg=C["panel"])
         inner.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
-        # inner 에 내부 패딩 컨테이너
-        content = tk.Frame(inner, bg=C["panel"])
-        content.pack(fill=tk.BOTH, expand=True, padx=14, pady=10)
+        pad = tk.Frame(inner, bg=C["panel"])
+        pad.pack(fill=tk.BOTH, expand=True, padx=14, pady=10)
         if title:
-            tk.Label(content, text=title,
+            # 타이틀 라벨 (pack) 과 body (pack) 를 분리 → grid/pack 혼용 방지
+            tk.Label(pad, text=title,
                      bg=C["panel"], fg=C["accent"],
                      font=("Segoe UI", 8, "bold")).pack(anchor=tk.W, pady=(0, 7))
-        content._outer = outer   # 외부에서 gridding 용
-        return content
+            body = tk.Frame(pad, bg=C["panel"])
+            body.pack(fill=tk.BOTH, expand=True)
+        else:
+            body = pad
+        body._outer = outer
+        return body
 
     # ------------------------------------------------------------------
     # UI 구성 — Bento Grid
@@ -512,13 +518,11 @@ class App(tk.Tk):
         # ╚══════════════════════════════════════╝
         ce = self._make_card(bento, "메시지 로그")
         ce._outer.grid(row=3, column=0, columnspan=2, sticky="nsew")
-        # content 프레임이 세로 확장되도록
-        ce.pack_configure(expand=True)
         ce.columnconfigure(0, weight=1)
-        ce.rowconfigure(1, weight=1)
+        ce.rowconfigure(0, weight=1)
 
         log_frame = tk.Frame(ce, bg=C["log_bg"])
-        log_frame.grid(row=1, column=0, sticky="nsew")
+        log_frame.grid(row=0, column=0, sticky="nsew")
         log_frame.rowconfigure(0, weight=1)
         log_frame.columnconfigure(0, weight=1)
 
