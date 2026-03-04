@@ -493,9 +493,13 @@ class App(tk.Tk):
             self._msg_queue.put(("error", "⚠ 등록된 계정이 없습니다. [계정 관리]에서 추가하세요."))
             return
 
-        accounts = list(self._accounts)  # 스레드 시작 시점 스냅샷
+        # 사용 체크된 계정만 필터 (스레드 시작 시점 스냅샷)
+        accounts = [a for a in self._accounts if a.get("enabled", True)]
+        if not accounts:
+            self._msg_queue.put(("error", "⚠ 활성화된 계정이 없습니다. 계정 관리에서 ☑ 체크하세요."))
+            return
         total = len(accounts)
-        self._msg_queue.put(("system", f"━━ 자동 입력 시작: {code} | 총 {total}개 계정 순차 처리 ━━"))
+        self._msg_queue.put(("system", f"━━ 자동 입력 시작: {code} | 활성 계정 {total}개 순차 처리 ━━"))
 
         success_count = 0
         fail_count = 0
@@ -549,7 +553,7 @@ class App(tk.Tk):
 # ---------------------------------------------------------------------------
 
 class _AccountEditDialog(tk.Toplevel):
-    """계정 추가/수정 단순 다이얼로그."""
+    """계정 추가/수정 다이얼로그 (이메일·비밀번호·비고·사용여부)."""
 
     def __init__(self, parent, account: dict = None) -> None:
         super().__init__(parent)
@@ -579,23 +583,37 @@ class _AccountEditDialog(tk.Toplevel):
                 show="" if self._show_pw.get() else "*")
         ).grid(row=2, column=1, sticky=tk.W, padx=(0, 12), pady=(0, 4))
 
+        ttk.Label(self, text="비고:").grid(
+            row=3, column=0, padx=12, pady=4, sticky=tk.W)
+        self._memo_var = tk.StringVar(value=account.get("memo", "") if account else "")
+        ttk.Entry(self, textvariable=self._memo_var, width=32).grid(
+            row=3, column=1, padx=(0, 12), pady=4, sticky=tk.EW)
+
+        self._enabled_var = tk.BooleanVar(
+            value=account.get("enabled", True) if account else True)
+        ttk.Checkbutton(self, text="이 계정 사용 (체크 해제 시 건너뜀)",
+                        variable=self._enabled_var).grid(
+            row=4, column=1, sticky=tk.W, padx=(0, 12), pady=(4, 4))
+
         btn_frame = ttk.Frame(self)
-        btn_frame.grid(row=3, column=0, columnspan=2, pady=10)
+        btn_frame.grid(row=5, column=0, columnspan=2, pady=10)
         ttk.Button(btn_frame, text="확인", command=self._ok).pack(side=tk.LEFT, padx=6)
         ttk.Button(btn_frame, text="취소", command=self.destroy).pack(side=tk.LEFT, padx=6)
 
         self.bind("<Return>", lambda e: self._ok())
         self.bind("<Escape>", lambda e: self.destroy())
 
-        # 이메일 필드에 포커스
-        self.after(50, lambda: self._email_var and None)
-
     def _ok(self) -> None:
         email = self._email_var.get().strip()
         if not email:
             messagebox.showwarning("입력 오류", "이메일을 입력하세요.", parent=self)
             return
-        self.result = {"email": email, "password": self._pw_var.get()}
+        self.result = {
+            "email": email,
+            "password": self._pw_var.get(),
+            "memo": self._memo_var.get().strip(),
+            "enabled": self._enabled_var.get(),
+        }
         self.destroy()
 
 
@@ -620,7 +638,7 @@ class AccountManagerDialog(tk.Toplevel):
     def _build_ui(self) -> None:
         ttk.Label(
             self,
-            text="최대 50개 등록 가능. 코드 수신 시 현재(▶) 계정부터 순차 사용.",
+            text="☑ 클릭으로 사용/미사용 전환 | ✕ 클릭으로 삭제 | 더블클릭으로 수정",
             foreground="gray",
         ).pack(padx=10, pady=(8, 2), anchor=tk.W)
 
@@ -628,22 +646,30 @@ class AccountManagerDialog(tk.Toplevel):
         tree_frame = ttk.Frame(self)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=4)
 
-        cols = ("no", "email", "password")
+        cols = ("check", "no", "email", "password", "memo", "del")
         self._tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=16)
-        self._tree.heading("no", text="No.")
+        self._tree.heading("check", text="사용")
+        self._tree.heading("no",    text="No.")
         self._tree.heading("email", text="이메일")
         self._tree.heading("password", text="비밀번호")
-        self._tree.column("no", width=55, anchor="center", stretch=False)
-        self._tree.column("email", width=230)
-        self._tree.column("password", width=100, stretch=False)
+        self._tree.heading("memo",  text="비고")
+        self._tree.heading("del",   text="삭제")
+        self._tree.column("check",    width=40,  anchor="center", stretch=False)
+        self._tree.column("no",       width=40,  anchor="center", stretch=False)
+        self._tree.column("email",    width=190)
+        self._tree.column("password", width=80,  stretch=False)
+        self._tree.column("memo",     width=120)
+        self._tree.column("del",      width=40,  anchor="center", stretch=False)
 
         sb = ttk.Scrollbar(tree_frame, command=self._tree.yview)
         self._tree.configure(yscrollcommand=sb.set)
         sb.pack(side=tk.RIGHT, fill=tk.Y)
         self._tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        self._tree.bind("<Double-1>", lambda e: self._edit())
-        self._tree.tag_configure("current", foreground="#4ec9b0")
+        self._tree.bind("<Double-1>", self._on_double_click)
+        self._tree.bind("<ButtonRelease-1>", self._on_tree_click)
+        self._tree.tag_configure("current",  foreground="#4ec9b0")
+        self._tree.tag_configure("disabled", foreground="#666666")
 
         # 버튼
         btn_frame = ttk.Frame(self)
@@ -651,9 +677,10 @@ class AccountManagerDialog(tk.Toplevel):
 
         ttk.Button(btn_frame, text="추가", command=self._add).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_frame, text="수정", command=self._edit).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_frame, text="삭제", command=self._delete).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_frame, text="현재로 설정",
-                   command=self._set_current).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="전체 선택",
+                   command=self._enable_all).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="전체 해제",
+                   command=self._disable_all).pack(side=tk.LEFT, padx=3)
         ttk.Separator(btn_frame, orient=tk.VERTICAL).pack(
             side=tk.LEFT, fill=tk.Y, padx=6)
         ttk.Button(btn_frame, text="저장 후 닫기",
@@ -664,19 +691,75 @@ class AccountManagerDialog(tk.Toplevel):
             self._tree.delete(item)
 
         for i, acct in enumerate(self._accounts):
-            marker = "▶" if i == self._current_idx else f"{i + 1}"
+            enabled = acct.get("enabled", True)
+            check  = "☑" if enabled else "☐"
+            marker = "▶" if i == self._current_idx else str(i + 1)
             masked = "•" * min(len(acct.get("password", "")), 8) or "(없음)"
-            tags = ("current",) if i == self._current_idx else ()
+            memo   = acct.get("memo", "")
+            tags = []
+            if i == self._current_idx:
+                tags.append("current")
+            if not enabled:
+                tags.append("disabled")
             self._tree.insert(
                 "", tk.END, iid=str(i),
-                values=(marker, acct.get("email", ""), masked),
-                tags=tags,
+                values=(check, marker, acct.get("email", ""), masked, memo, "✕"),
+                tags=tuple(tags),
             )
 
-        # 현재 계정으로 스크롤
         if self._accounts and 0 <= self._current_idx < len(self._accounts):
             self._tree.selection_set(str(self._current_idx))
             self._tree.see(str(self._current_idx))
+
+    # ── 클릭 이벤트 ──────────────────────────────────────────────
+
+    def _on_tree_click(self, event) -> None:
+        region = self._tree.identify_region(event.x, event.y)
+        if region != "cell":
+            return
+        col     = self._tree.identify_column(event.x)   # "#1", "#2", ...
+        row_id  = self._tree.identify_row(event.y)
+        if not row_id:
+            return
+        idx = int(row_id)
+        if col == "#1":   # 사용 체크박스
+            self._toggle_enabled(idx)
+        elif col == "#6": # 삭제 버튼
+            self._delete_by_idx(idx)
+
+    def _on_double_click(self, event) -> None:
+        col = self._tree.identify_column(event.x)
+        if col in ("#1", "#6"):   # 체크·삭제 열은 더블클릭 무시
+            return
+        self._edit()
+
+    def _toggle_enabled(self, idx: int) -> None:
+        acct = self._accounts[idx]
+        acct["enabled"] = not acct.get("enabled", True)
+        self._refresh_list()
+
+    def _delete_by_idx(self, idx: int) -> None:
+        if not messagebox.askyesno(
+                "삭제 확인",
+                f"계정 {idx + 1} ({self._accounts[idx]['email']})을 삭제하시겠습니까?",
+                parent=self):
+            return
+        self._accounts.pop(idx)
+        if self._current_idx >= len(self._accounts):
+            self._current_idx = max(0, len(self._accounts) - 1)
+        self._refresh_list()
+
+    def _enable_all(self) -> None:
+        for acct in self._accounts:
+            acct["enabled"] = True
+        self._refresh_list()
+
+    def _disable_all(self) -> None:
+        for acct in self._accounts:
+            acct["enabled"] = False
+        self._refresh_list()
+
+    # ── 기존 동작 ────────────────────────────────────────────────
 
     def _selected_idx(self) -> Optional[int]:
         sel = self._tree.selection()
@@ -702,20 +785,6 @@ class AccountManagerDialog(tk.Toplevel):
         if dlg.result:
             self._accounts[idx] = dlg.result
             self._refresh_list()
-
-    def _delete(self) -> None:
-        idx = self._selected_idx()
-        if idx is None:
-            return
-        if not messagebox.askyesno(
-                "삭제 확인",
-                f"계정 {idx + 1} ({self._accounts[idx]['email']})을 삭제하시겠습니까?",
-                parent=self):
-            return
-        self._accounts.pop(idx)
-        if self._current_idx >= len(self._accounts):
-            self._current_idx = max(0, len(self._accounts) - 1)
-        self._refresh_list()
 
     def _set_current(self) -> None:
         idx = self._selected_idx()
