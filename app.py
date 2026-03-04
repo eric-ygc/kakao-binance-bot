@@ -44,10 +44,34 @@ DEFAULT_CONFIG = {
     "account_index": 0,
 }
 
-# 영문+숫자 9자리 정확히 일치
 CODE_PATTERN = re.compile(r'^[A-Za-z0-9]{9}$')
-
 logger = setup_logger("app")
+
+# ---------------------------------------------------------------------------
+# 다크 테마 색상 팔레트
+# ---------------------------------------------------------------------------
+C = {
+    "bg":          "#1e1e1e",   # 메인 배경
+    "panel":       "#252526",   # LabelFrame 내부
+    "panel2":      "#2d2d30",   # 버튼·입력 배경
+    "input":       "#3c3c3c",   # Entry 배경
+    "border":      "#454545",   # 테두리
+    "fg":          "#cccccc",   # 일반 텍스트
+    "fg_dim":      "#888888",   # 보조 텍스트
+    "fg_bright":   "#e8e8e8",   # 강조 텍스트
+    "accent":      "#4ec9b0",   # 청록 강조
+    "yellow":      "#f0c040",   # 코드 색상
+    "code_bg":     "#0d1117",   # 코드 패널 배경
+    "log_bg":      "#1a1a1a",   # 로그 배경
+    "start":       "#2d6a2d",   # 시작 버튼
+    "start_hl":    "#3d8a3d",
+    "stop":        "#7a1f1f",   # 중지 버튼
+    "stop_hl":     "#9a2f2f",
+    "sel":         "#094771",   # 선택 색상
+    "error":       "#f44747",
+    "ok":          "#4ec9b0",
+    "system":      "#6a9955",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -83,87 +107,243 @@ class App(tk.Tk):
 
         self.title("카카오 메시지 모니터")
         self.resizable(True, True)
-        self.minsize(540, 640)
+        self.minsize(560, 680)
+        self.configure(bg=C["bg"])
 
         self._monitor_thread: Optional[threading.Thread] = None
         self._stop_event: Optional[threading.Event] = None
         self._auto_cancel_event: threading.Event = threading.Event()
         self._msg_queue: queue.Queue = queue.Queue()
         self._caught_history: list = []
-        self._processed_codes: set = set()  # 중복 실행 방지
+        self._processed_codes: set = set()
 
         cfg = load_config()
-
-        # 계정 상태 (_build_ui 전 초기화)
         self._accounts: list = list(cfg.get("accounts", []))
         self._account_idx: int = int(cfg.get("account_index", 0))
         if self._account_idx >= len(self._accounts):
             self._account_idx = 0
 
+        self._apply_dark_theme()
         self._build_ui(cfg)
         self._poll_queue()
-
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # ------------------------------------------------------------------
+    # 다크 테마 적용
+    # ------------------------------------------------------------------
+
+    def _apply_dark_theme(self) -> None:
+        s = ttk.Style(self)
+        s.theme_use("clam")
+
+        # 전역 기본값
+        s.configure(".",
+            background=C["bg"],
+            foreground=C["fg"],
+            fieldbackground=C["input"],
+            bordercolor=C["border"],
+            darkcolor=C["panel"],
+            lightcolor=C["panel"],
+            troughcolor=C["panel"],
+            selectbackground=C["sel"],
+            selectforeground="#ffffff",
+            insertcolor=C["fg"],
+            relief="flat",
+        )
+
+        # Frame
+        s.configure("TFrame", background=C["bg"])
+        s.configure("Panel.TFrame", background=C["panel"])
+
+        # Label
+        s.configure("TLabel", background=C["bg"], foreground=C["fg"],
+                    font=("Segoe UI", 9))
+        s.configure("Panel.TLabel", background=C["panel"], foreground=C["fg"],
+                    font=("Segoe UI", 9))
+        s.configure("Dim.TLabel", background=C["panel"], foreground=C["fg_dim"],
+                    font=("Segoe UI", 8))
+
+        # LabelFrame
+        s.configure("TLabelframe",
+            background=C["panel"],
+            bordercolor=C["border"],
+            darkcolor=C["panel"],
+            lightcolor=C["panel"],
+            relief="groove",
+        )
+        s.configure("TLabelframe.Label",
+            background=C["panel"],
+            foreground=C["accent"],
+            font=("Segoe UI", 9, "bold"),
+        )
+
+        # Entry
+        s.configure("TEntry",
+            fieldbackground=C["input"],
+            foreground=C["fg_bright"],
+            bordercolor=C["border"],
+            insertcolor=C["fg"],
+            padding=(4, 3),
+        )
+        s.map("TEntry",
+            fieldbackground=[("readonly", C["panel"])],
+            bordercolor=[("focus", C["accent"])],
+        )
+
+        # Checkbutton
+        s.configure("TCheckbutton",
+            background=C["panel"],
+            foreground=C["fg"],
+            focuscolor=C["panel"],
+            font=("Segoe UI", 9),
+        )
+        s.map("TCheckbutton",
+            background=[("active", C["panel"])],
+            foreground=[("active", C["fg_bright"])],
+        )
+
+        # Button (기본)
+        s.configure("TButton",
+            background=C["panel2"],
+            foreground=C["fg"],
+            bordercolor=C["border"],
+            darkcolor=C["panel2"],
+            lightcolor=C["panel2"],
+            padding=(10, 5),
+            font=("Segoe UI", 9),
+            relief="flat",
+        )
+        s.map("TButton",
+            background=[("active", "#3f3f3f"), ("pressed", "#1a1a1a")],
+            foreground=[("active", C["fg_bright"])],
+            bordercolor=[("active", C["accent"])],
+        )
+
+        # 시작 버튼 (초록)
+        s.configure("Start.TButton",
+            background=C["start"],
+            foreground="#ffffff",
+            darkcolor=C["start"],
+            lightcolor=C["start"],
+            font=("Segoe UI", 9, "bold"),
+        )
+        s.map("Start.TButton",
+            background=[("active", C["start_hl"]), ("pressed", "#1d4a1d")],
+        )
+
+        # 중지 버튼 (빨강)
+        s.configure("Stop.TButton",
+            background=C["stop"],
+            foreground="#ffffff",
+            darkcolor=C["stop"],
+            lightcolor=C["stop"],
+            font=("Segoe UI", 9, "bold"),
+        )
+        s.map("Stop.TButton",
+            background=[("active", C["stop_hl"]), ("pressed", "#4b1010")],
+        )
+
+        # Scrollbar
+        s.configure("TScrollbar",
+            background=C["panel2"],
+            troughcolor=C["panel"],
+            bordercolor=C["border"],
+            darkcolor=C["panel"],
+            lightcolor=C["panel"],
+            arrowcolor=C["fg_dim"],
+            relief="flat",
+        )
+        s.map("TScrollbar",
+            background=[("active", "#505050")],
+        )
+
+        # Separator
+        s.configure("TSeparator", background=C["border"])
+
+        # Treeview
+        s.configure("Treeview",
+            background="#2d2d2d",
+            foreground=C["fg"],
+            fieldbackground="#2d2d2d",
+            bordercolor=C["border"],
+            rowheight=26,
+            font=("Segoe UI", 9),
+        )
+        s.configure("Treeview.Heading",
+            background="#333333",
+            foreground="#aaaaaa",
+            bordercolor=C["border"],
+            darkcolor="#333333",
+            lightcolor="#333333",
+            font=("Segoe UI", 9, "bold"),
+            relief="flat",
+        )
+        s.map("Treeview",
+            background=[("selected", C["sel"])],
+            foreground=[("selected", "#ffffff")],
+        )
+        s.map("Treeview.Heading",
+            background=[("active", "#3d3d3d")],
+        )
 
     # ------------------------------------------------------------------
     # UI 구성
     # ------------------------------------------------------------------
 
     def _build_ui(self, cfg: dict) -> None:
-        # ── 카카오 모니터링 설정 ──────────────────────────────────────
-        setting_frame = ttk.LabelFrame(self, text="모니터링 설정", padding=8)
-        setting_frame.pack(fill=tk.X, padx=10, pady=(8, 4))
-        setting_frame.columnconfigure(1, weight=1)
+        PAD = {"padx": 10, "pady": (6, 3)}
 
-        ttk.Label(setting_frame, text="채팅방 이름:").grid(
-            row=0, column=0, sticky=tk.W, pady=2)
+        # ── 모니터링 설정 ──────────────────────────────────────────
+        sf = ttk.LabelFrame(self, text="  모니터링 설정", padding=(12, 8))
+        sf.pack(fill=tk.X, **PAD)
+        sf.columnconfigure(1, weight=1)
+
+        ttk.Label(sf, text="채팅방 이름", style="Panel.TLabel").grid(
+            row=0, column=0, sticky=tk.W, pady=3)
         self._room_var = tk.StringVar(value=cfg["room_name"])
-        ttk.Entry(setting_frame, textvariable=self._room_var).grid(
-            row=0, column=1, columnspan=2, sticky=tk.EW, padx=(6, 0), pady=2)
+        ttk.Entry(sf, textvariable=self._room_var).grid(
+            row=0, column=1, columnspan=2, sticky=tk.EW, padx=(8, 0), pady=3)
 
-        ttk.Label(setting_frame, text="폴링 간격:").grid(
-            row=1, column=0, sticky=tk.W, pady=2)
-        interval_row = ttk.Frame(setting_frame)
-        interval_row.grid(row=1, column=1, sticky=tk.W, padx=(6, 0), pady=2)
+        ttk.Label(sf, text="폴링 간격", style="Panel.TLabel").grid(
+            row=1, column=0, sticky=tk.W, pady=3)
+        ir = ttk.Frame(sf, style="Panel.TFrame")
+        ir.grid(row=1, column=1, sticky=tk.W, padx=(8, 0), pady=3)
         self._interval_var = tk.StringVar(value=str(cfg["poll_interval"]))
-        ttk.Entry(interval_row, textvariable=self._interval_var, width=6).pack(side=tk.LEFT)
-        ttk.Label(interval_row, text="초").pack(side=tk.LEFT, padx=4)
+        ttk.Entry(ir, textvariable=self._interval_var, width=6).pack(side=tk.LEFT)
+        ttk.Label(ir, text=" 초", style="Panel.TLabel").pack(side=tk.LEFT)
 
-        ttk.Label(setting_frame, text="발신자 필터:").grid(
-            row=2, column=0, sticky=tk.W, pady=2)
+        ttk.Label(sf, text="발신자 필터", style="Panel.TLabel").grid(
+            row=2, column=0, sticky=tk.W, pady=3)
         self._sender_var = tk.StringVar(value=cfg["watch_sender"])
-        ttk.Entry(setting_frame, textvariable=self._sender_var).grid(
-            row=2, column=1, sticky=tk.EW, padx=(6, 0), pady=2)
-        ttk.Label(setting_frame, text="(비워두면 전체)", foreground="gray").grid(
-            row=2, column=2, sticky=tk.W, padx=4)
+        ttk.Entry(sf, textvariable=self._sender_var).grid(
+            row=2, column=1, sticky=tk.EW, padx=(8, 0), pady=3)
+        ttk.Label(sf, text="비워두면 전체", style="Dim.TLabel").grid(
+            row=2, column=2, sticky=tk.W, padx=6)
 
         self._topmost_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
-            setting_frame, text="항상 위",
-            variable=self._topmost_var, command=self._toggle_topmost,
-        ).grid(row=3, column=0, columnspan=3, sticky=tk.W, pady=(4, 0))
+        ttk.Checkbutton(sf, text="항상 위 표시",
+                        variable=self._topmost_var,
+                        command=self._toggle_topmost).grid(
+            row=3, column=0, columnspan=3, sticky=tk.W, pady=(6, 2))
 
-        # ── 자동 입력 설정 ────────────────────────────────────────────
-        auto_frame = ttk.LabelFrame(self, text="자동 입력 설정", padding=8)
-        auto_frame.pack(fill=tk.X, padx=10, pady=4)
-        auto_frame.columnconfigure(1, weight=1)
+        # ── 자동 입력 설정 ─────────────────────────────────────────
+        af = ttk.LabelFrame(self, text="  자동 입력 설정", padding=(12, 8))
+        af.pack(fill=tk.X, **PAD)
+        af.columnconfigure(1, weight=1)
 
         self._auto_var = tk.BooleanVar(value=cfg.get("auto_input", False))
-        auto_check = ttk.Checkbutton(
-            auto_frame,
-            text="코드 캐치 시 자동으로 사이트에 입력",
-            variable=self._auto_var,
-        )
-        auto_check.grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 4))
+        auto_chk = ttk.Checkbutton(af, text="코드 캐치 시 자동으로 사이트에 입력",
+                                   variable=self._auto_var)
+        auto_chk.grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 6))
 
         if not SELENIUM_OK:
-            ttk.Label(auto_frame, text="⚠ selenium 미설치 — 자동 입력 불가",
-                      foreground="#f44747").grid(
+            ttk.Label(af, text="⚠  selenium 미설치 — 자동 입력 불가",
+                      style="Panel.TLabel",
+                      foreground=C["error"]).grid(
                 row=1, column=0, columnspan=3, sticky=tk.W)
             self._auto_var.set(False)
-            auto_check.config(state=tk.DISABLED)
+            auto_chk.config(state=tk.DISABLED)
 
-        # 사이트 주소 5개 (실패 시 순서대로 시도)
         saved_urls = cfg.get("site_urls", DEFAULT_CONFIG["site_urls"])
         if isinstance(saved_urls, str):
             saved_urls = [saved_urls, "", "", "", ""]
@@ -172,105 +352,112 @@ class App(tk.Tk):
 
         self._site_url_vars = []
         for i in range(5):
-            ttk.Label(auto_frame, text=f"사이트 {i+1}:").grid(
-                row=2 + i, column=0, sticky=tk.W, pady=2)
+            ttk.Label(af, text=f"사이트 {i+1}", style="Panel.TLabel").grid(
+                row=2+i, column=0, sticky=tk.W, pady=2)
             var = tk.StringVar(value=saved_urls[i])
             self._site_url_vars.append(var)
-            ttk.Entry(auto_frame, textvariable=var).grid(
-                row=2 + i, column=1, columnspan=2, sticky=tk.EW, padx=(6, 0), pady=2)
+            ttk.Entry(af, textvariable=var).grid(
+                row=2+i, column=1, columnspan=2, sticky=tk.EW, padx=(8, 0), pady=2)
 
-        ttk.Label(auto_frame, text="Chrome 포트:").grid(
-            row=7, column=0, sticky=tk.W, pady=2)
-        port_row = ttk.Frame(auto_frame)
-        port_row.grid(row=7, column=1, sticky=tk.W, padx=(6, 0), pady=2)
+        ttk.Label(af, text="Chrome 포트", style="Panel.TLabel").grid(
+            row=7, column=0, sticky=tk.W, pady=(6, 2))
+        pr = ttk.Frame(af, style="Panel.TFrame")
+        pr.grid(row=7, column=1, sticky=tk.W, padx=(8, 0), pady=(6, 2))
         self._port_var = tk.StringVar(value=str(cfg.get("chrome_port", 9222)))
-        ttk.Entry(port_row, textvariable=self._port_var, width=7).pack(side=tk.LEFT)
-        ttk.Label(port_row, text="(기본 9222)", foreground="gray").pack(
-            side=tk.LEFT, padx=6)
+        ttk.Entry(pr, textvariable=self._port_var, width=7).pack(side=tk.LEFT)
+        ttk.Label(pr, text="  기본 9222", style="Dim.TLabel").pack(side=tk.LEFT)
 
-        # ── 현재 계정 표시 + 계정 관리 버튼 ─────────────────────────
-        ttk.Label(auto_frame, text="현재 계정:").grid(
-            row=8, column=0, sticky=tk.W, pady=(6, 2))
+        ttk.Label(af, text="현재 계정", style="Panel.TLabel").grid(
+            row=8, column=0, sticky=tk.W, pady=(8, 2))
         self._current_acct_var = tk.StringVar()
-        ttk.Label(auto_frame, textvariable=self._current_acct_var,
-                  foreground="#4ec9b0").grid(
-            row=8, column=1, sticky=tk.W, padx=(6, 0), pady=(6, 2))
-        ttk.Button(auto_frame, text="계정 관리",
+        ttk.Label(af, textvariable=self._current_acct_var,
+                  style="Panel.TLabel",
+                  foreground=C["accent"]).grid(
+            row=8, column=1, sticky=tk.W, padx=(8, 0), pady=(8, 2))
+        ttk.Button(af, text="계정 관리",
                    command=self._open_account_manager).grid(
-            row=8, column=2, sticky=tk.E, padx=(4, 0), pady=(6, 2))
-
+            row=8, column=2, sticky=tk.E, padx=(4, 0), pady=(8, 2))
         self._update_current_acct_label()
 
-        # ── 제어 버튼 ─────────────────────────────────────────────────
-        btn_frame = ttk.Frame(self)
-        btn_frame.pack(fill=tk.X, padx=10, pady=4)
+        # ── 제어 버튼 ──────────────────────────────────────────────
+        bf = ttk.Frame(self)
+        bf.pack(fill=tk.X, padx=10, pady=6)
 
-        self._start_btn = ttk.Button(
-            btn_frame, text="▶ 모니터링 시작", command=self._start_monitor)
-        self._start_btn.pack(side=tk.LEFT, padx=(0, 4))
+        self._start_btn = ttk.Button(bf, text="▶  모니터링 시작",
+                                     style="Start.TButton",
+                                     command=self._start_monitor)
+        self._start_btn.pack(side=tk.LEFT, padx=(0, 6))
 
-        self._stop_btn = ttk.Button(
-            btn_frame, text="■ 중지", command=self._stop_monitor, state=tk.DISABLED)
-        self._stop_btn.pack(side=tk.LEFT, padx=4)
+        self._stop_btn = ttk.Button(bf, text="■  중지",
+                                    style="Stop.TButton",
+                                    command=self._stop_monitor,
+                                    state=tk.DISABLED)
+        self._stop_btn.pack(side=tk.LEFT, padx=6)
 
-        ttk.Button(btn_frame, text="로그 지우기", command=self._clear_log).pack(
-            side=tk.LEFT, padx=4)
+        ttk.Button(bf, text="로그 지우기",
+                   command=self._clear_log).pack(side=tk.LEFT, padx=6)
 
-        # ── 캐치 패널 ─────────────────────────────────────────────────
-        catch_frame = ttk.LabelFrame(self, text="캐치된 코드  (영숫자 9자리)", padding=8)
-        catch_frame.pack(fill=tk.X, padx=10, pady=4)
+        # ── 캐치 코드 패널 ─────────────────────────────────────────
+        cf = ttk.LabelFrame(self, text="  캐치된 코드  ( 영숫자 9자리 )", padding=(12, 8))
+        cf.pack(fill=tk.X, padx=10, pady=(3, 3))
 
-        code_box = tk.Frame(catch_frame, bg="#0d1117", relief=tk.FLAT, bd=1)
+        code_box = tk.Frame(cf, bg=C["code_bg"], relief=tk.FLAT)
         code_box.pack(fill=tk.X, pady=(0, 6))
 
         self._latest_code_var = tk.StringVar(value="—")
         tk.Label(code_box, textvariable=self._latest_code_var,
-                 font=("Consolas", 36, "bold"), fg="#f0c040", bg="#0d1117",
-                 pady=12).pack()
+                 font=("Consolas", 40, "bold"),
+                 fg=C["yellow"], bg=C["code_bg"], pady=14).pack()
 
         self._latest_meta_var = tk.StringVar(value="대기 중...")
         tk.Label(code_box, textvariable=self._latest_meta_var,
-                 font=("Consolas", 9), fg="#8b949e", bg="#0d1117",
-                 pady=2).pack()
+                 font=("Segoe UI", 9), fg=C["fg_dim"], bg=C["code_bg"],
+                 pady=4).pack()
 
-        hist_frame = tk.Frame(catch_frame, bg=self.cget("bg"))
-        hist_frame.pack(fill=tk.X)
-        tk.Label(hist_frame, text="이전:", font=("Consolas", 9), fg="gray").pack(side=tk.LEFT)
+        hist_row = tk.Frame(cf, bg=C["panel"])
+        hist_row.pack(fill=tk.X, pady=(2, 0))
+        tk.Label(hist_row, text="이전 코드:", font=("Segoe UI", 8),
+                 fg=C["fg_dim"], bg=C["panel"]).pack(side=tk.LEFT)
         self._history_var = tk.StringVar(value="없음")
-        tk.Label(hist_frame, textvariable=self._history_var,
-                 font=("Consolas", 9), fg="#4ec9b0").pack(side=tk.LEFT, padx=4)
+        tk.Label(hist_row, textvariable=self._history_var,
+                 font=("Consolas", 9), fg=C["accent"], bg=C["panel"]).pack(
+            side=tk.LEFT, padx=6)
 
-        # ── 전체 메시지 로그 ──────────────────────────────────────────
-        log_frame = ttk.LabelFrame(self, text="전체 메시지 로그", padding=4)
-        log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=4)
+        # ── 로그 ───────────────────────────────────────────────────
+        lf = ttk.LabelFrame(self, text="  메시지 로그", padding=(4, 4))
+        lf.pack(fill=tk.BOTH, expand=True, padx=10, pady=(3, 3))
 
         self._log = tk.Text(
-            log_frame, state=tk.DISABLED,
-            background="#1e1e1e", foreground="#d4d4d4",
-            insertbackground="#d4d4d4", relief=tk.FLAT,
-            wrap=tk.WORD, font=("Consolas", 10),
+            lf, state=tk.DISABLED,
+            background=C["log_bg"], foreground=C["fg"],
+            insertbackground=C["fg"],
+            relief=tk.FLAT, wrap=tk.WORD,
+            font=("Consolas", 10),
+            selectbackground=C["sel"],
+            padx=6, pady=4,
         )
-        scrollbar = ttk.Scrollbar(log_frame, command=self._log.yview)
-        self._log.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        sb = ttk.Scrollbar(lf, command=self._log.yview)
+        self._log.configure(yscrollcommand=sb.set)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
         self._log.pack(fill=tk.BOTH, expand=True)
 
-        self._log.tag_configure("timestamp", foreground="#569cd6")
-        self._log.tag_configure("sender", foreground="#4ec9b0",
+        self._log.tag_configure("timestamp",  foreground="#569cd6")
+        self._log.tag_configure("sender",     foreground=C["accent"],
                                 font=("Consolas", 10, "bold"))
-        self._log.tag_configure("system", foreground="#6a9955",
+        self._log.tag_configure("system",     foreground=C["system"],
                                 font=("Consolas", 10, "italic"))
-        self._log.tag_configure("error", foreground="#f44747")
-        self._log.tag_configure("caught_code", foreground="#f0c040",
+        self._log.tag_configure("error",      foreground=C["error"])
+        self._log.tag_configure("caught_code",foreground=C["yellow"],
                                 font=("Consolas", 10, "bold"))
-        self._log.tag_configure("auto_ok", foreground="#4ec9b0",
+        self._log.tag_configure("auto_ok",    foreground=C["ok"],
                                 font=("Consolas", 10, "italic"))
 
-        # ── 상태바 ────────────────────────────────────────────────────
+        # ── 상태바 ─────────────────────────────────────────────────
         self._status_var = tk.StringVar(value="대기 중")
-        ttk.Label(self, textvariable=self._status_var,
-                  relief=tk.SUNKEN, anchor=tk.W).pack(
-            fill=tk.X, padx=10, pady=(0, 6))
+        tk.Label(self, textvariable=self._status_var,
+                 bg=C["panel"], fg=C["fg_dim"],
+                 font=("Segoe UI", 8), anchor=tk.W,
+                 padx=10, pady=4).pack(fill=tk.X, side=tk.BOTTOM)
 
     # ------------------------------------------------------------------
     # 설정 헬퍼
@@ -302,12 +489,12 @@ class App(tk.Tk):
 
     def _update_current_acct_label(self) -> None:
         if not self._accounts:
-            self._current_acct_var.set("(등록된 계정 없음 — 계정 관리에서 추가)")
+            self._current_acct_var.set("등록된 계정 없음 — [계정 관리]에서 추가하세요")
         else:
-            idx = self._account_idx % len(self._accounts)
-            acct = self._accounts[idx]
+            enabled = [a for a in self._accounts if a.get("enabled", True)]
+            total = len(self._accounts)
             self._current_acct_var.set(
-                f"▶  [{idx + 1}/{len(self._accounts)}]  {acct['email']}")
+                f"총 {total}개 계정 등록 | 활성 {len(enabled)}개")
 
     def _open_account_manager(self) -> None:
         def on_save(accounts, current_idx):
@@ -319,7 +506,6 @@ class App(tk.Tk):
         AccountManagerDialog(self, self._accounts, self._account_idx, on_save)
 
     def _advance_account(self) -> None:
-        """성공 후 다음 계정으로 전환."""
         if self._accounts:
             self._account_idx = (self._account_idx + 1) % len(self._accounts)
             self.after(0, self._update_current_acct_label)
@@ -334,7 +520,6 @@ class App(tk.Tk):
         if not room_name:
             self._append_log("채팅방 이름을 입력하세요.", tag="error")
             return
-
         try:
             poll_interval = float(self._interval_var.get())
         except ValueError:
@@ -360,7 +545,7 @@ class App(tk.Tk):
 
         self._start_btn.config(state=tk.DISABLED)
         self._stop_btn.config(state=tk.NORMAL)
-        self._status_var.set(f"모니터링 중 | 채팅방: {room_name}")
+        self._status_var.set(f"모니터링 중  |  채팅방: {room_name}")
         self._append_log(f"── 모니터링 시작: '{room_name}' ──", tag="system")
 
     def _stop_monitor(self) -> None:
@@ -408,14 +593,12 @@ class App(tk.Tk):
         except queue.Empty:
             pass
 
-        if (
-            self._monitor_thread is not None
-            and not self._monitor_thread.is_alive()
-            and self._stop_btn["state"] == tk.NORMAL
-        ):
+        if (self._monitor_thread is not None
+                and not self._monitor_thread.is_alive()
+                and self._stop_btn["state"] == tk.NORMAL):
             self._start_btn.config(state=tk.NORMAL)
             self._stop_btn.config(state=tk.DISABLED)
-            self._status_var.set("모니터링 종료 (오류 또는 정상 종료)")
+            self._status_var.set("모니터링 종료")
             self._monitor_thread = None
 
         self.after(200, self._poll_queue)
@@ -450,19 +633,14 @@ class App(tk.Tk):
 
         self._latest_code_var.set(code)
         self._latest_meta_var.set(f"{ts}  |  {sender}")
-
-        if self._caught_history:
-            self._history_var.set("  ".join(self._caught_history))
-        else:
-            self._history_var.set("없음")
-
+        self._history_var.set("  ".join(self._caught_history) if self._caught_history else "없음")
         self._status_var.set(f"코드 캐치: {code}  ({ts} / {sender})")
 
         if not SELENIUM_OK:
             self._append_log("⚠ selenium 미설치 — 자동 입력 불가", tag="error")
             return
         if not self._auto_var.get():
-            self._append_log("ℹ 자동 입력 비활성 (체크박스 확인)", tag="system")
+            self._append_log("ℹ 자동 입력 비활성", tag="system")
             return
         if code in self._processed_codes:
             self._append_log(f"중복 코드 무시: {code}", tag="system")
@@ -485,19 +663,14 @@ class App(tk.Tk):
         ).start()
 
     def _run_auto_input(self, code: str, port: int, site_urls: list) -> None:
-        """백그라운드 스레드에서 브라우저 자동 입력 실행 — 등록된 계정 전부 순차 처리."""
         if self._auto_cancel_event.is_set():
             return
 
-        if not self._accounts:
-            self._msg_queue.put(("error", "⚠ 등록된 계정이 없습니다. [계정 관리]에서 추가하세요."))
-            return
-
-        # 사용 체크된 계정만 필터 (스레드 시작 시점 스냅샷)
         accounts = [a for a in self._accounts if a.get("enabled", True)]
         if not accounts:
             self._msg_queue.put(("error", "⚠ 활성화된 계정이 없습니다. 계정 관리에서 ☑ 체크하세요."))
             return
+
         total = len(accounts)
         self._msg_queue.put(("system", f"━━ 자동 입력 시작: {code} | 활성 계정 {total}개 순차 처리 ━━"))
 
@@ -509,7 +682,7 @@ class App(tk.Tk):
                 self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
                 return
 
-            acct_label = f"[{i + 1}/{total}] {acct['email']}"
+            acct_label = f"[{i+1}/{total}] {acct['email']}"
             self._msg_queue.put(("system", f"→ {acct_label} 처리 중..."))
 
             def _status(msg: str) -> None:
@@ -532,8 +705,9 @@ class App(tk.Tk):
                 self._msg_queue.put(("error", f"✗ 실패: {acct_label} — {e}"))
                 fail_count += 1
 
+        tag = "auto_ok" if fail_count == 0 else "system"
         self._msg_queue.put((
-            "auto_ok" if fail_count == 0 else "system",
+            tag,
             f"━━ 전체 완료: {code} | 성공 {success_count} / 실패 {fail_count} / 총 {total} ━━",
         ))
 
@@ -553,82 +727,80 @@ class App(tk.Tk):
 # ---------------------------------------------------------------------------
 
 class _AccountEditDialog(tk.Toplevel):
-    """계정 추가/수정 다이얼로그 (이메일·비밀번호·비고·사용여부)."""
-
     def __init__(self, parent, account: dict = None) -> None:
         super().__init__(parent)
         self.title("계정 추가" if account is None else "계정 수정")
         self.resizable(False, False)
+        self.configure(bg=C["bg"])
         self.grab_set()
         self.result: Optional[dict] = None
-
         self.columnconfigure(1, weight=1)
 
-        ttk.Label(self, text="이메일:").grid(
-            row=0, column=0, padx=12, pady=8, sticky=tk.W)
-        self._email_var = tk.StringVar(value=account["email"] if account else "")
-        ttk.Entry(self, textvariable=self._email_var, width=32).grid(
-            row=0, column=1, padx=(0, 12), pady=8, sticky=tk.EW)
+        fields = [
+            ("이메일",   "email",    False),
+            ("비밀번호", "password", True),
+            ("비고",     "memo",     False),
+        ]
+        self._vars = {}
+        for r, (label, key, is_pw) in enumerate(fields):
+            ttk.Label(self, text=f"{label}:", style="TLabel").grid(
+                row=r, column=0, padx=14, pady=6, sticky=tk.W)
+            var = tk.StringVar(value=account.get(key, "") if account else "")
+            self._vars[key] = var
+            entry = ttk.Entry(self, textvariable=var, width=34,
+                              show="*" if is_pw else "")
+            entry.grid(row=r, column=1, padx=(0, 14), pady=6, sticky=tk.EW)
+            if is_pw:
+                self._pw_entry = entry
 
-        ttk.Label(self, text="비밀번호:").grid(
-            row=1, column=0, padx=12, pady=4, sticky=tk.W)
-        self._pw_var = tk.StringVar(value=account["password"] if account else "")
-        self._pw_entry = ttk.Entry(self, textvariable=self._pw_var, width=32, show="*")
-        self._pw_entry.grid(row=1, column=1, padx=(0, 12), pady=4, sticky=tk.EW)
-
+        # 비밀번호 표시 체크
         self._show_pw = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
-            self, text="비밀번호 표시", variable=self._show_pw,
-            command=lambda: self._pw_entry.config(
-                show="" if self._show_pw.get() else "*")
-        ).grid(row=2, column=1, sticky=tk.W, padx=(0, 12), pady=(0, 4))
+        ttk.Checkbutton(self, text="비밀번호 표시", variable=self._show_pw,
+                        command=lambda: self._pw_entry.config(
+                            show="" if self._show_pw.get() else "*")).grid(
+            row=1, column=2, padx=(0, 14))
 
-        ttk.Label(self, text="비고:").grid(
-            row=3, column=0, padx=12, pady=4, sticky=tk.W)
-        self._memo_var = tk.StringVar(value=account.get("memo", "") if account else "")
-        ttk.Entry(self, textvariable=self._memo_var, width=32).grid(
-            row=3, column=1, padx=(0, 12), pady=4, sticky=tk.EW)
-
+        # 사용 여부
         self._enabled_var = tk.BooleanVar(
             value=account.get("enabled", True) if account else True)
-        ttk.Checkbutton(self, text="이 계정 사용 (체크 해제 시 건너뜀)",
+        ttk.Checkbutton(self, text="이 계정 사용",
                         variable=self._enabled_var).grid(
-            row=4, column=1, sticky=tk.W, padx=(0, 12), pady=(4, 4))
+            row=3, column=1, sticky=tk.W, padx=(0, 14), pady=(0, 6))
 
         btn_frame = ttk.Frame(self)
-        btn_frame.grid(row=5, column=0, columnspan=2, pady=10)
-        ttk.Button(btn_frame, text="확인", command=self._ok).pack(side=tk.LEFT, padx=6)
-        ttk.Button(btn_frame, text="취소", command=self.destroy).pack(side=tk.LEFT, padx=6)
+        btn_frame.grid(row=4, column=0, columnspan=3, pady=12)
+        ttk.Button(btn_frame, text="확인", style="Start.TButton",
+                   command=self._ok).pack(side=tk.LEFT, padx=6)
+        ttk.Button(btn_frame, text="취소",
+                   command=self.destroy).pack(side=tk.LEFT, padx=6)
 
         self.bind("<Return>", lambda e: self._ok())
         self.bind("<Escape>", lambda e: self.destroy())
 
     def _ok(self) -> None:
-        email = self._email_var.get().strip()
+        email = self._vars["email"].get().strip()
         if not email:
             messagebox.showwarning("입력 오류", "이메일을 입력하세요.", parent=self)
             return
         self.result = {
-            "email": email,
-            "password": self._pw_var.get(),
-            "memo": self._memo_var.get().strip(),
-            "enabled": self._enabled_var.get(),
+            "email":    email,
+            "password": self._vars["password"].get(),
+            "memo":     self._vars["memo"].get().strip(),
+            "enabled":  self._enabled_var.get(),
         }
         self.destroy()
 
 
 class AccountManagerDialog(tk.Toplevel):
-    """최대 50개 계정 목록 관리 다이얼로그."""
-
-    def __init__(self, parent, accounts: list, current_idx: int,
-                 on_save) -> None:
+    def __init__(self, parent, accounts: list, current_idx: int, on_save) -> None:
         super().__init__(parent)
         self.title("계정 목록 관리")
         self.resizable(True, True)
-        self.minsize(460, 420)
+        self.minsize(580, 460)
+        self.configure(bg=C["bg"])
         self.grab_set()
 
-        self._accounts: list = list(accounts)   # 작업 복사본
+        self._accounts: list = list(accounts)
         self._current_idx: int = current_idx
         self._on_save = on_save
 
@@ -636,60 +808,59 @@ class AccountManagerDialog(tk.Toplevel):
         self._refresh_list()
 
     def _build_ui(self) -> None:
-        ttk.Label(
-            self,
-            text="☑ 클릭으로 사용/미사용 전환 | ✕ 클릭으로 삭제 | 더블클릭으로 수정",
-            foreground="gray",
-        ).pack(padx=10, pady=(8, 2), anchor=tk.W)
+        ttk.Label(self,
+                  text="  ☑ 클릭 → 사용/미사용 전환    ✕ 클릭 → 삭제    더블클릭 → 수정",
+                  foreground=C["fg_dim"],
+                  font=("Segoe UI", 8)).pack(padx=10, pady=(8, 2), anchor=tk.W)
 
-        # Treeview
         tree_frame = ttk.Frame(self)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=4)
 
         cols = ("check", "no", "email", "password", "memo", "del")
-        self._tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=16)
-        self._tree.heading("check", text="사용")
-        self._tree.heading("no",    text="No.")
-        self._tree.heading("email", text="이메일")
+        self._tree = ttk.Treeview(tree_frame, columns=cols,
+                                  show="headings", height=16)
+        self._tree.heading("check",    text="사용")
+        self._tree.heading("no",       text="No.")
+        self._tree.heading("email",    text="이메일")
         self._tree.heading("password", text="비밀번호")
-        self._tree.heading("memo",  text="비고")
-        self._tree.heading("del",   text="삭제")
-        self._tree.column("check",    width=40,  anchor="center", stretch=False)
-        self._tree.column("no",       width=40,  anchor="center", stretch=False)
-        self._tree.column("email",    width=190)
+        self._tree.heading("memo",     text="비고")
+        self._tree.heading("del",      text="삭제")
+        self._tree.column("check",    width=45,  anchor="center", stretch=False)
+        self._tree.column("no",       width=45,  anchor="center", stretch=False)
+        self._tree.column("email",    width=200)
         self._tree.column("password", width=80,  stretch=False)
-        self._tree.column("memo",     width=120)
-        self._tree.column("del",      width=40,  anchor="center", stretch=False)
+        self._tree.column("memo",     width=130)
+        self._tree.column("del",      width=45,  anchor="center", stretch=False)
 
         sb = ttk.Scrollbar(tree_frame, command=self._tree.yview)
         self._tree.configure(yscrollcommand=sb.set)
         sb.pack(side=tk.RIGHT, fill=tk.Y)
         self._tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        self._tree.bind("<Double-1>", self._on_double_click)
+        self._tree.bind("<Double-1>",      self._on_double_click)
         self._tree.bind("<ButtonRelease-1>", self._on_tree_click)
-        self._tree.tag_configure("current",  foreground="#4ec9b0")
-        self._tree.tag_configure("disabled", foreground="#666666")
+        self._tree.tag_configure("current",  foreground=C["accent"])
+        self._tree.tag_configure("disabled", foreground="#555555")
 
-        # 버튼
         btn_frame = ttk.Frame(self)
         btn_frame.pack(padx=10, pady=(4, 10))
 
-        ttk.Button(btn_frame, text="추가", command=self._add).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_frame, text="수정", command=self._edit).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="추가",
+                   command=self._add).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="수정",
+                   command=self._edit).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_frame, text="전체 선택",
                    command=self._enable_all).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_frame, text="전체 해제",
                    command=self._disable_all).pack(side=tk.LEFT, padx=3)
         ttk.Separator(btn_frame, orient=tk.VERTICAL).pack(
-            side=tk.LEFT, fill=tk.Y, padx=6)
-        ttk.Button(btn_frame, text="저장 후 닫기",
+            side=tk.LEFT, fill=tk.Y, padx=8)
+        ttk.Button(btn_frame, text="저장 후 닫기", style="Start.TButton",
                    command=self._save_close).pack(side=tk.LEFT, padx=3)
 
     def _refresh_list(self) -> None:
         for item in self._tree.get_children():
             self._tree.delete(item)
-
         for i, acct in enumerate(self._accounts):
             enabled = acct.get("enabled", True)
             check  = "☑" if enabled else "☐"
@@ -701,47 +872,40 @@ class AccountManagerDialog(tk.Toplevel):
                 tags.append("current")
             if not enabled:
                 tags.append("disabled")
-            self._tree.insert(
-                "", tk.END, iid=str(i),
-                values=(check, marker, acct.get("email", ""), masked, memo, "✕"),
-                tags=tuple(tags),
-            )
-
+            self._tree.insert("", tk.END, iid=str(i),
+                              values=(check, marker, acct.get("email", ""),
+                                      masked, memo, "✕"),
+                              tags=tuple(tags))
         if self._accounts and 0 <= self._current_idx < len(self._accounts):
             self._tree.selection_set(str(self._current_idx))
             self._tree.see(str(self._current_idx))
 
-    # ── 클릭 이벤트 ──────────────────────────────────────────────
-
     def _on_tree_click(self, event) -> None:
-        region = self._tree.identify_region(event.x, event.y)
-        if region != "cell":
+        if self._tree.identify_region(event.x, event.y) != "cell":
             return
-        col     = self._tree.identify_column(event.x)   # "#1", "#2", ...
-        row_id  = self._tree.identify_row(event.y)
+        col    = self._tree.identify_column(event.x)
+        row_id = self._tree.identify_row(event.y)
         if not row_id:
             return
         idx = int(row_id)
-        if col == "#1":   # 사용 체크박스
+        if col == "#1":
             self._toggle_enabled(idx)
-        elif col == "#6": # 삭제 버튼
+        elif col == "#6":
             self._delete_by_idx(idx)
 
     def _on_double_click(self, event) -> None:
-        col = self._tree.identify_column(event.x)
-        if col in ("#1", "#6"):   # 체크·삭제 열은 더블클릭 무시
+        if self._tree.identify_column(event.x) in ("#1", "#6"):
             return
         self._edit()
 
     def _toggle_enabled(self, idx: int) -> None:
-        acct = self._accounts[idx]
-        acct["enabled"] = not acct.get("enabled", True)
+        self._accounts[idx]["enabled"] = not self._accounts[idx].get("enabled", True)
         self._refresh_list()
 
     def _delete_by_idx(self, idx: int) -> None:
         if not messagebox.askyesno(
                 "삭제 확인",
-                f"계정 {idx + 1} ({self._accounts[idx]['email']})을 삭제하시겠습니까?",
+                f"계정 {idx+1} ({self._accounts[idx]['email']})을 삭제하시겠습니까?",
                 parent=self):
             return
         self._accounts.pop(idx)
@@ -750,16 +914,14 @@ class AccountManagerDialog(tk.Toplevel):
         self._refresh_list()
 
     def _enable_all(self) -> None:
-        for acct in self._accounts:
-            acct["enabled"] = True
+        for a in self._accounts:
+            a["enabled"] = True
         self._refresh_list()
 
     def _disable_all(self) -> None:
-        for acct in self._accounts:
-            acct["enabled"] = False
+        for a in self._accounts:
+            a["enabled"] = False
         self._refresh_list()
-
-    # ── 기존 동작 ────────────────────────────────────────────────
 
     def _selected_idx(self) -> Optional[int]:
         sel = self._tree.selection()
@@ -767,8 +929,7 @@ class AccountManagerDialog(tk.Toplevel):
 
     def _add(self) -> None:
         if len(self._accounts) >= 50:
-            messagebox.showwarning(
-                "최대 50개", "계정은 최대 50개까지 등록 가능합니다.", parent=self)
+            messagebox.showwarning("최대 50개", "계정은 최대 50개까지 등록 가능합니다.", parent=self)
             return
         dlg = _AccountEditDialog(self)
         self.wait_window(dlg)
@@ -785,13 +946,6 @@ class AccountManagerDialog(tk.Toplevel):
         if dlg.result:
             self._accounts[idx] = dlg.result
             self._refresh_list()
-
-    def _set_current(self) -> None:
-        idx = self._selected_idx()
-        if idx is None:
-            return
-        self._current_idx = idx
-        self._refresh_list()
 
     def _save_close(self) -> None:
         self._on_save(self._accounts, self._current_idx)
