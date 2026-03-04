@@ -4,6 +4,7 @@
 실행: python app.py
 설정: config.json (자동 저장/복원)
 """
+import datetime
 import json
 import queue
 import re
@@ -11,7 +12,7 @@ import sys
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 from typing import Optional
 
 # exe(frozen) 실행 시 sys.executable 기준, 스크립트 실행 시 __file__ 기준
@@ -32,7 +33,8 @@ try:
 except ImportError:
     SELENIUM_OK = False
 
-CONFIG_PATH = BASE_DIR / "config.json"
+CONFIG_PATH   = BASE_DIR / "config.json"
+LOG_DATA_PATH = BASE_DIR / "log_data.json"
 DEFAULT_CONFIG = {
     "room_name": "",
     "poll_interval": 3,
@@ -115,6 +117,8 @@ class App(tk.Tk):
         self._auto_cancel_event: threading.Event = threading.Event()
         self._msg_queue: queue.Queue = queue.Queue()
         self._caught_history: list = []
+        self._caught_codes_full: list = []   # {"code","ts","sender","datetime"}
+        self._log_lines: list = []            # {"text","tag"} — 최대 2000줄
         self._processed_codes: set = set()
 
         cfg = load_config()
@@ -125,6 +129,7 @@ class App(tk.Tk):
 
         self._apply_dark_theme()
         self._build_ui(cfg)
+        self._load_log_data()
         self._poll_queue()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -290,98 +295,133 @@ class App(tk.Tk):
     # UI 구성
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Bento Grid 카드 헬퍼
+    # ------------------------------------------------------------------
+
+    def _make_card(self, parent: tk.Widget, title: str = "") -> tk.Frame:
+        """
+        Bento Grid 카드 생성.
+        outer (border 색 배경, 1px 두께) > inner (panel 배경, 패딩) 구조.
+        outer 를 grid() 로 배치하고, inner(content) 를 반환한다.
+        """
+        outer = tk.Frame(parent, bg=C["border"])
+        inner = tk.Frame(outer, bg=C["panel"])
+        inner.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
+        # inner 에 내부 패딩 컨테이너
+        content = tk.Frame(inner, bg=C["panel"])
+        content.pack(fill=tk.BOTH, expand=True, padx=14, pady=10)
+        if title:
+            tk.Label(content, text=title,
+                     bg=C["panel"], fg=C["accent"],
+                     font=("Segoe UI", 8, "bold")).pack(anchor=tk.W, pady=(0, 7))
+        content._outer = outer   # 외부에서 gridding 용
+        return content
+
+    # ------------------------------------------------------------------
+    # UI 구성 — Bento Grid
+    # ------------------------------------------------------------------
+
     def _build_ui(self, cfg: dict) -> None:
-        PAD = {"padx": 10, "pady": (6, 3)}
+        G = 6   # card gap
 
-        # ── 모니터링 설정 ──────────────────────────────────────────
-        sf = ttk.LabelFrame(self, text="  모니터링 설정", padding=(12, 8))
-        sf.pack(fill=tk.X, **PAD)
-        sf.columnconfigure(1, weight=1)
+        # ── 상태바 (하단 고정) ─────────────────────────────────────
+        self._status_var = tk.StringVar(value="대기 중")
+        tk.Label(self, textvariable=self._status_var,
+                 bg=C["panel2"], fg=C["fg_dim"],
+                 font=("Segoe UI", 8), anchor=tk.W,
+                 padx=10, pady=3).pack(fill=tk.X, side=tk.BOTTOM)
 
-        ttk.Label(sf, text="채팅방 이름", style="Panel.TLabel").grid(
+        # ── Bento 그리드 컨테이너 ──────────────────────────────────
+        bento = tk.Frame(self, bg=C["bg"])
+        bento.pack(fill=tk.BOTH, expand=True, padx=G, pady=G)
+
+        # col 0: 코드 카드 (고정폭)  /  col 1: 나머지 (확장)
+        bento.columnconfigure(0, weight=0, minsize=232)
+        bento.columnconfigure(1, weight=1)
+        # row 3: 로그 카드만 세로 확장
+        bento.rowconfigure(3, weight=1)
+
+        # ╔══════════════════════════════════════╗
+        # ║  A: 캐치된 코드  (col 0, row 0–1)   ║
+        # ╚══════════════════════════════════════╝
+        ca = self._make_card(bento)
+        ca._outer.grid(row=0, column=0, rowspan=2, sticky="nsew",
+                       padx=(0, G), pady=(0, G))
+
+        tk.Label(ca, text="캐치된 코드",
+                 bg=C["panel"], fg=C["accent"],
+                 font=("Segoe UI", 8, "bold")).pack(anchor=tk.W, pady=(0, 6))
+
+        code_box = tk.Frame(ca, bg=C["code_bg"],
+                            highlightbackground=C["border"],
+                            highlightthickness=1)
+        code_box.pack(fill=tk.X)
+
+        self._latest_code_var = tk.StringVar(value="—")
+        tk.Label(code_box, textvariable=self._latest_code_var,
+                 font=("Consolas", 34, "bold"),
+                 fg=C["yellow"], bg=C["code_bg"], pady=10).pack()
+
+        self._latest_meta_var = tk.StringVar(value="대기 중...")
+        tk.Label(code_box, textvariable=self._latest_meta_var,
+                 font=("Segoe UI", 8), fg=C["fg_dim"],
+                 bg=C["code_bg"], pady=3).pack()
+
+        tk.Frame(ca, bg=C["border"], height=1).pack(fill=tk.X, pady=(10, 5))
+
+        hist_row = tk.Frame(ca, bg=C["panel"])
+        hist_row.pack(fill=tk.X)
+        tk.Label(hist_row, text="이전:", font=("Segoe UI", 8),
+                 fg=C["fg_dim"], bg=C["panel"]).pack(side=tk.LEFT)
+        self._history_var = tk.StringVar(value="없음")
+        tk.Label(hist_row, textvariable=self._history_var,
+                 font=("Consolas", 8), fg=C["accent"], bg=C["panel"],
+                 wraplength=190, justify=tk.LEFT).pack(side=tk.LEFT, padx=4)
+
+        # ╔══════════════════════════════════════╗
+        # ║  B: 모니터링 설정  (col 1, row 0)   ║
+        # ╚══════════════════════════════════════╝
+        cb = self._make_card(bento, "모니터링 설정")
+        cb._outer.grid(row=0, column=1, sticky="nsew", pady=(0, G))
+        cb.columnconfigure(1, weight=1)
+
+        ttk.Label(cb, text="채팅방 이름", style="Panel.TLabel").grid(
             row=0, column=0, sticky=tk.W, pady=3)
         self._room_var = tk.StringVar(value=cfg["room_name"])
-        ttk.Entry(sf, textvariable=self._room_var).grid(
+        ttk.Entry(cb, textvariable=self._room_var).grid(
             row=0, column=1, columnspan=2, sticky=tk.EW, padx=(8, 0), pady=3)
 
-        ttk.Label(sf, text="폴링 간격", style="Panel.TLabel").grid(
+        ttk.Label(cb, text="폴링 간격", style="Panel.TLabel").grid(
             row=1, column=0, sticky=tk.W, pady=3)
-        ir = ttk.Frame(sf, style="Panel.TFrame")
-        ir.grid(row=1, column=1, sticky=tk.W, padx=(8, 0), pady=3)
+        ivf = ttk.Frame(cb, style="Panel.TFrame")
+        ivf.grid(row=1, column=1, sticky=tk.W, padx=(8, 0), pady=3)
         self._interval_var = tk.StringVar(value=str(cfg["poll_interval"]))
-        ttk.Entry(ir, textvariable=self._interval_var, width=6).pack(side=tk.LEFT)
-        ttk.Label(ir, text=" 초", style="Panel.TLabel").pack(side=tk.LEFT)
+        ttk.Entry(ivf, textvariable=self._interval_var, width=6).pack(side=tk.LEFT)
+        ttk.Label(ivf, text=" 초", style="Panel.TLabel").pack(side=tk.LEFT)
 
-        ttk.Label(sf, text="발신자 필터", style="Panel.TLabel").grid(
+        ttk.Label(cb, text="발신자 필터", style="Panel.TLabel").grid(
             row=2, column=0, sticky=tk.W, pady=3)
         self._sender_var = tk.StringVar(value=cfg["watch_sender"])
-        ttk.Entry(sf, textvariable=self._sender_var).grid(
+        ttk.Entry(cb, textvariable=self._sender_var).grid(
             row=2, column=1, sticky=tk.EW, padx=(8, 0), pady=3)
-        ttk.Label(sf, text="비워두면 전체", style="Dim.TLabel").grid(
+        ttk.Label(cb, text="비워두면 전체", style="Dim.TLabel").grid(
             row=2, column=2, sticky=tk.W, padx=6)
 
         self._topmost_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(sf, text="항상 위 표시",
+        ttk.Checkbutton(cb, text="항상 위 표시",
                         variable=self._topmost_var,
                         command=self._toggle_topmost).grid(
-            row=3, column=0, columnspan=3, sticky=tk.W, pady=(6, 2))
+            row=3, column=0, columnspan=3, sticky=tk.W, pady=(6, 0))
 
-        # ── 자동 입력 설정 ─────────────────────────────────────────
-        af = ttk.LabelFrame(self, text="  자동 입력 설정", padding=(12, 8))
-        af.pack(fill=tk.X, **PAD)
-        af.columnconfigure(1, weight=1)
+        # ╔══════════════════════════════════════╗
+        # ║  C: 제어 버튼  (col 1, row 1)       ║
+        # ╚══════════════════════════════════════╝
+        cc = self._make_card(bento)
+        cc._outer.grid(row=1, column=1, sticky="nsew", pady=(0, G))
 
-        self._auto_var = tk.BooleanVar(value=cfg.get("auto_input", False))
-        auto_chk = ttk.Checkbutton(af, text="코드 캐치 시 자동으로 사이트에 입력",
-                                   variable=self._auto_var)
-        auto_chk.grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 6))
-
-        if not SELENIUM_OK:
-            ttk.Label(af, text="⚠  selenium 미설치 — 자동 입력 불가",
-                      style="Panel.TLabel",
-                      foreground=C["error"]).grid(
-                row=1, column=0, columnspan=3, sticky=tk.W)
-            self._auto_var.set(False)
-            auto_chk.config(state=tk.DISABLED)
-
-        saved_urls = cfg.get("site_urls", DEFAULT_CONFIG["site_urls"])
-        if isinstance(saved_urls, str):
-            saved_urls = [saved_urls, "", "", "", ""]
-        while len(saved_urls) < 5:
-            saved_urls.append("")
-
-        self._site_url_vars = []
-        for i in range(5):
-            ttk.Label(af, text=f"사이트 {i+1}", style="Panel.TLabel").grid(
-                row=2+i, column=0, sticky=tk.W, pady=2)
-            var = tk.StringVar(value=saved_urls[i])
-            self._site_url_vars.append(var)
-            ttk.Entry(af, textvariable=var).grid(
-                row=2+i, column=1, columnspan=2, sticky=tk.EW, padx=(8, 0), pady=2)
-
-        ttk.Label(af, text="Chrome 포트", style="Panel.TLabel").grid(
-            row=7, column=0, sticky=tk.W, pady=(6, 2))
-        pr = ttk.Frame(af, style="Panel.TFrame")
-        pr.grid(row=7, column=1, sticky=tk.W, padx=(8, 0), pady=(6, 2))
-        self._port_var = tk.StringVar(value=str(cfg.get("chrome_port", 9222)))
-        ttk.Entry(pr, textvariable=self._port_var, width=7).pack(side=tk.LEFT)
-        ttk.Label(pr, text="  기본 9222", style="Dim.TLabel").pack(side=tk.LEFT)
-
-        ttk.Label(af, text="현재 계정", style="Panel.TLabel").grid(
-            row=8, column=0, sticky=tk.W, pady=(8, 2))
-        self._current_acct_var = tk.StringVar()
-        ttk.Label(af, textvariable=self._current_acct_var,
-                  style="Panel.TLabel",
-                  foreground=C["accent"]).grid(
-            row=8, column=1, sticky=tk.W, padx=(8, 0), pady=(8, 2))
-        ttk.Button(af, text="계정 관리",
-                   command=self._open_account_manager).grid(
-            row=8, column=2, sticky=tk.E, padx=(4, 0), pady=(8, 2))
-        self._update_current_acct_label()
-
-        # ── 제어 버튼 ──────────────────────────────────────────────
-        bf = ttk.Frame(self)
-        bf.pack(fill=tk.X, padx=10, pady=6)
+        bf = tk.Frame(cc, bg=C["panel"])
+        bf.pack(fill=tk.X)
 
         self._start_btn = ttk.Button(bf, text="▶  모니터링 시작",
                                      style="Start.TButton",
@@ -392,43 +432,98 @@ class App(tk.Tk):
                                     style="Stop.TButton",
                                     command=self._stop_monitor,
                                     state=tk.DISABLED)
-        self._stop_btn.pack(side=tk.LEFT, padx=6)
+        self._stop_btn.pack(side=tk.LEFT, padx=(0, 8))
+
+        ttk.Separator(bf, orient=tk.VERTICAL).pack(
+            side=tk.LEFT, fill=tk.Y, padx=(0, 8), pady=2)
 
         ttk.Button(bf, text="로그 지우기",
-                   command=self._clear_log).pack(side=tk.LEFT, padx=6)
+                   command=self._clear_log).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(bf, text="텍스트 저장",
+                   command=self._export_text).pack(side=tk.LEFT)
 
-        # ── 캐치 코드 패널 ─────────────────────────────────────────
-        cf = ttk.LabelFrame(self, text="  캐치된 코드  ( 영숫자 9자리 )", padding=(12, 8))
-        cf.pack(fill=tk.X, padx=10, pady=(3, 3))
+        # ╔══════════════════════════════════════╗
+        # ║  D: 자동 입력 설정  (full, row 2)   ║
+        # ╚══════════════════════════════════════╝
+        cd = self._make_card(bento, "자동 입력 설정")
+        cd._outer.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(0, G))
+        cd.columnconfigure(1, weight=1)
+        cd.columnconfigure(3, weight=1)
 
-        code_box = tk.Frame(cf, bg=C["code_bg"], relief=tk.FLAT)
-        code_box.pack(fill=tk.X, pady=(0, 6))
+        self._auto_var = tk.BooleanVar(value=cfg.get("auto_input", False))
+        auto_chk = ttk.Checkbutton(cd, text="코드 캐치 시 자동으로 사이트에 입력",
+                                   variable=self._auto_var)
+        auto_chk.grid(row=0, column=0, columnspan=4, sticky=tk.W, pady=(0, 6))
 
-        self._latest_code_var = tk.StringVar(value="—")
-        tk.Label(code_box, textvariable=self._latest_code_var,
-                 font=("Consolas", 40, "bold"),
-                 fg=C["yellow"], bg=C["code_bg"], pady=14).pack()
+        if not SELENIUM_OK:
+            ttk.Label(cd, text="⚠  selenium 미설치 — 자동 입력 불가",
+                      foreground=C["error"],
+                      style="Panel.TLabel").grid(
+                row=0, column=4, sticky=tk.W, padx=(16, 0))
+            self._auto_var.set(False)
+            auto_chk.config(state=tk.DISABLED)
 
-        self._latest_meta_var = tk.StringVar(value="대기 중...")
-        tk.Label(code_box, textvariable=self._latest_meta_var,
-                 font=("Segoe UI", 9), fg=C["fg_dim"], bg=C["code_bg"],
-                 pady=4).pack()
+        # 사이트 URL — 5개를 2열 배치
+        saved_urls = cfg.get("site_urls", DEFAULT_CONFIG["site_urls"])
+        if isinstance(saved_urls, str):
+            saved_urls = [saved_urls, "", "", "", ""]
+        while len(saved_urls) < 5:
+            saved_urls.append("")
+        self._site_url_vars = [tk.StringVar(value=saved_urls[i]) for i in range(5)]
 
-        hist_row = tk.Frame(cf, bg=C["panel"])
-        hist_row.pack(fill=tk.X, pady=(2, 0))
-        tk.Label(hist_row, text="이전 코드:", font=("Segoe UI", 8),
-                 fg=C["fg_dim"], bg=C["panel"]).pack(side=tk.LEFT)
-        self._history_var = tk.StringVar(value="없음")
-        tk.Label(hist_row, textvariable=self._history_var,
-                 font=("Consolas", 9), fg=C["accent"], bg=C["panel"]).pack(
-            side=tk.LEFT, padx=6)
+        for pr, (li, ri) in enumerate([(0, 1), (2, 3)], start=1):
+            ttk.Label(cd, text=f"사이트 {li+1}", style="Panel.TLabel").grid(
+                row=pr, column=0, sticky=tk.W, pady=2)
+            ttk.Entry(cd, textvariable=self._site_url_vars[li]).grid(
+                row=pr, column=1, sticky=tk.EW, padx=(6, 14), pady=2)
+            ttk.Label(cd, text=f"사이트 {ri+1}", style="Panel.TLabel").grid(
+                row=pr, column=2, sticky=tk.W, pady=2)
+            ttk.Entry(cd, textvariable=self._site_url_vars[ri]).grid(
+                row=pr, column=3, sticky=tk.EW, padx=(6, 0), pady=2)
 
-        # ── 로그 ───────────────────────────────────────────────────
-        lf = ttk.LabelFrame(self, text="  메시지 로그", padding=(4, 4))
-        lf.pack(fill=tk.BOTH, expand=True, padx=10, pady=(3, 3))
+        # 사이트 5  +  Chrome 포트
+        ttk.Label(cd, text="사이트 5", style="Panel.TLabel").grid(
+            row=3, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(cd, textvariable=self._site_url_vars[4]).grid(
+            row=3, column=1, sticky=tk.EW, padx=(6, 14), pady=2)
+        ttk.Label(cd, text="Chrome 포트", style="Panel.TLabel").grid(
+            row=3, column=2, sticky=tk.W, pady=2)
+        pf = ttk.Frame(cd, style="Panel.TFrame")
+        pf.grid(row=3, column=3, sticky=tk.W, padx=(6, 0), pady=2)
+        self._port_var = tk.StringVar(value=str(cfg.get("chrome_port", 9222)))
+        ttk.Entry(pf, textvariable=self._port_var, width=7).pack(side=tk.LEFT)
+        ttk.Label(pf, text="  기본 9222", style="Dim.TLabel").pack(side=tk.LEFT)
+
+        # 현재 계정
+        ttk.Label(cd, text="현재 계정", style="Panel.TLabel").grid(
+            row=4, column=0, sticky=tk.W, pady=(8, 2))
+        self._current_acct_var = tk.StringVar()
+        ttk.Label(cd, textvariable=self._current_acct_var,
+                  style="Panel.TLabel",
+                  foreground=C["accent"]).grid(
+            row=4, column=1, columnspan=2, sticky=tk.W, padx=(6, 0), pady=(8, 2))
+        ttk.Button(cd, text="계정 관리",
+                   command=self._open_account_manager).grid(
+            row=4, column=3, sticky=tk.E, pady=(8, 2))
+        self._update_current_acct_label()
+
+        # ╔══════════════════════════════════════╗
+        # ║  E: 메시지 로그  (full, row 3, 확장) ║
+        # ╚══════════════════════════════════════╝
+        ce = self._make_card(bento, "메시지 로그")
+        ce._outer.grid(row=3, column=0, columnspan=2, sticky="nsew")
+        # content 프레임이 세로 확장되도록
+        ce.pack_configure(expand=True)
+        ce.columnconfigure(0, weight=1)
+        ce.rowconfigure(1, weight=1)
+
+        log_frame = tk.Frame(ce, bg=C["log_bg"])
+        log_frame.grid(row=1, column=0, sticky="nsew")
+        log_frame.rowconfigure(0, weight=1)
+        log_frame.columnconfigure(0, weight=1)
 
         self._log = tk.Text(
-            lf, state=tk.DISABLED,
+            log_frame, state=tk.DISABLED,
             background=C["log_bg"], foreground=C["fg"],
             insertbackground=C["fg"],
             relief=tk.FLAT, wrap=tk.WORD,
@@ -436,28 +531,21 @@ class App(tk.Tk):
             selectbackground=C["sel"],
             padx=6, pady=4,
         )
-        sb = ttk.Scrollbar(lf, command=self._log.yview)
+        sb = ttk.Scrollbar(log_frame, command=self._log.yview)
         self._log.configure(yscrollcommand=sb.set)
-        sb.pack(side=tk.RIGHT, fill=tk.Y)
-        self._log.pack(fill=tk.BOTH, expand=True)
+        sb.grid(row=0, column=1, sticky="ns")
+        self._log.grid(row=0, column=0, sticky="nsew")
 
-        self._log.tag_configure("timestamp",  foreground="#569cd6")
-        self._log.tag_configure("sender",     foreground=C["accent"],
+        self._log.tag_configure("timestamp",   foreground="#569cd6")
+        self._log.tag_configure("sender",      foreground=C["accent"],
                                 font=("Consolas", 10, "bold"))
-        self._log.tag_configure("system",     foreground=C["system"],
+        self._log.tag_configure("system",      foreground=C["system"],
                                 font=("Consolas", 10, "italic"))
-        self._log.tag_configure("error",      foreground=C["error"])
-        self._log.tag_configure("caught_code",foreground=C["yellow"],
+        self._log.tag_configure("error",       foreground=C["error"])
+        self._log.tag_configure("caught_code", foreground=C["yellow"],
                                 font=("Consolas", 10, "bold"))
-        self._log.tag_configure("auto_ok",    foreground=C["ok"],
+        self._log.tag_configure("auto_ok",     foreground=C["ok"],
                                 font=("Consolas", 10, "italic"))
-
-        # ── 상태바 ─────────────────────────────────────────────────
-        self._status_var = tk.StringVar(value="대기 중")
-        tk.Label(self, textvariable=self._status_var,
-                 bg=C["panel"], fg=C["fg_dim"],
-                 font=("Segoe UI", 8), anchor=tk.W,
-                 padx=10, pady=4).pack(fill=tk.X, side=tk.BOTTOM)
 
     # ------------------------------------------------------------------
     # 설정 헬퍼
@@ -559,6 +647,7 @@ class App(tk.Tk):
         self._append_log("── 모니터링 중지 ──", tag="system")
 
     def _clear_log(self) -> None:
+        self._log_lines.clear()
         self._log.config(state=tk.NORMAL)
         self._log.delete("1.0", tk.END)
         self._log.config(state=tk.DISABLED)
@@ -569,6 +658,7 @@ class App(tk.Tk):
     def _on_close(self) -> None:
         if self._stop_event:
             self._stop_event.set()
+        self._save_log_data()
         save_config(self._get_current_config())
         self.destroy()
 
@@ -611,6 +701,16 @@ class App(tk.Tk):
         code = msg.content.strip()
         is_code = bool(CODE_PATTERN.match(code))
 
+        # 로그 영구 저장용 plain 라인
+        if is_code:
+            plain = f"[{msg.timestamp_str}] {msg.sender}: {code}  ★"
+            self._log_lines.append({"text": plain, "tag": "caught_code"})
+        else:
+            plain = f"[{msg.timestamp_str}] {msg.sender}: {msg.content}"
+            self._log_lines.append({"text": plain, "tag": ""})
+        if len(self._log_lines) > 2000:
+            self._log_lines = self._log_lines[-2000:]
+
         self._log.config(state=tk.NORMAL)
         self._log.insert(tk.END, f"[{msg.timestamp_str}] ", "timestamp")
         self._log.insert(tk.END, f"{msg.sender}", "sender")
@@ -626,6 +726,10 @@ class App(tk.Tk):
             self._update_catch_panel(code, msg.timestamp_str, msg.sender)
 
     def _update_catch_panel(self, code: str, ts: str, sender: str) -> None:
+        self._caught_codes_full.append({
+            "code": code, "ts": ts, "sender": sender,
+            "datetime": datetime.datetime.now().isoformat(timespec="seconds"),
+        })
         current = self._latest_code_var.get()
         if current != "—":
             self._caught_history.insert(0, current)
@@ -716,10 +820,105 @@ class App(tk.Tk):
     # ------------------------------------------------------------------
 
     def _append_log(self, text: str, tag: str = "") -> None:
+        self._log_lines.append({"text": text, "tag": tag})
+        if len(self._log_lines) > 2000:
+            self._log_lines = self._log_lines[-2000:]
         self._log.config(state=tk.NORMAL)
         self._log.insert(tk.END, text + "\n", tag if tag else ())
         self._log.see(tk.END)
         self._log.config(state=tk.DISABLED)
+
+    # ------------------------------------------------------------------
+    # 로그 영구 저장 / 복원 / 내보내기
+    # ------------------------------------------------------------------
+
+    def _load_log_data(self) -> None:
+        """프로그램 시작 시 log_data.json에서 이전 로그와 캐치 코드 복원."""
+        if not LOG_DATA_PATH.exists():
+            return
+        try:
+            with open(LOG_DATA_PATH, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            return
+
+        # 로그 라인 복원
+        lines = data.get("log_lines", [])
+        self._log_lines = lines[-2000:]
+        if self._log_lines:
+            self._log.config(state=tk.NORMAL)
+            for item in self._log_lines:
+                tag = item.get("tag", "")
+                self._log.insert(tk.END, item.get("text", "") + "\n",
+                                 tag if tag else ())
+            self._log.see(tk.END)
+            self._log.config(state=tk.DISABLED)
+
+        # 캐치 코드 복원
+        caught = data.get("caught_codes", [])
+        self._caught_codes_full = caught
+        if caught:
+            latest = caught[-1]
+            self._latest_code_var.set(latest["code"])
+            self._latest_meta_var.set(f"{latest['ts']}  |  {latest['sender']}")
+            prev = [c["code"] for c in reversed(caught[:-1])][:8]
+            self._caught_history = prev
+            self._history_var.set("  ".join(prev) if prev else "없음")
+            self._status_var.set(
+                f"이전 코드 복원: {latest['code']}  ({latest.get('datetime','')[:10]})")
+
+    def _save_log_data(self) -> None:
+        """종료 시 log_data.json에 로그·캐치 코드 저장."""
+        try:
+            data = {
+                "caught_codes": self._caught_codes_full,
+                "log_lines":    self._log_lines[-2000:],
+            }
+            with open(LOG_DATA_PATH, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.warning(f"로그 데이터 저장 실패: {e}")
+
+    def _export_text(self) -> None:
+        """캐치 코드 + 메시지 로그를 텍스트 파일로 내보내기."""
+        now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("텍스트 파일", "*.txt"), ("모든 파일", "*.*")],
+            initialfile=f"카카오모니터_{now_str}.txt",
+            title="텍스트 파일로 저장",
+        )
+        if not path:
+            return
+
+        sep = "═" * 60
+        out = []
+
+        # ── 캐치된 코드 목록
+        out.append(sep)
+        out.append(f"  캐치된 코드 목록  (총 {len(self._caught_codes_full)}개)")
+        out.append(sep)
+        if self._caught_codes_full:
+            for i, c in enumerate(self._caught_codes_full, 1):
+                dt = c.get("datetime", "")[:19].replace("T", " ")
+                out.append(f"  {i:>3}.  {c['code']}   {c['ts']}   {c['sender']}   {dt}")
+        else:
+            out.append("  (없음)")
+        out.append("")
+
+        # ── 메시지 로그
+        out.append(sep)
+        out.append("  메시지 로그")
+        out.append(sep)
+        for item in self._log_lines:
+            out.append(item.get("text", ""))
+
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("\n".join(out))
+            self._append_log(f"✓ 저장 완료: {path}", tag="auto_ok")
+        except Exception as e:
+            messagebox.showerror("저장 실패", str(e), parent=self)
 
 
 # ---------------------------------------------------------------------------
