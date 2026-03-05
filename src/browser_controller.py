@@ -80,40 +80,53 @@ def _ci(field: str) -> str:
     return f"translate({field},'{U}','{L}')"
 
 
+_EMAIL_XPATH = (
+    "//input[@type='email'"
+    " or contains(translate(@placeholder,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'email')"
+    " or contains(translate(@placeholder,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'이메일')"
+    " or contains(translate(@name,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'email')]"
+)
+_PW_XPATH = (
+    "//input[@type='password'"
+    " or contains(translate(@placeholder,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'password')"
+    " or contains(translate(@placeholder,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'비밀번호')]"
+)
+
+
 def _do_login(driver, wait, login_url: str, email: str, password: str, _st) -> None:
     """
-    로그인 URL 접속 → 이메일/비밀번호 바로 입력 → 로그인 버튼 클릭 → URL 전환 대기.
-    이미 세션이 유지된 경우(홈으로 리다이렉트) 로그인 단계를 생략한다.
+    로그인 URL 접속 → 이메일/비밀번호 바로 입력(버튼 클릭 없음) → Enter 제출 → URL 전환 대기.
+    세션이 이미 유지된 경우 로그인 단계를 생략한다.
     """
     _st("로그인 페이지 접속 중...")
     driver.get(login_url)
+    time.sleep(1)  # 초기 리다이렉트 대기
 
-    # 이메일 입력창 대기 — 세션 유지 시 홈으로 리다이렉트되므로 TimeoutException 발생
-    try:
-        email_input = wait.until(EC.visibility_of_element_located((By.XPATH,
-            "//input[contains(@placeholder,'email') or contains(@placeholder,'Email')]"
-        )))
-    except TimeoutException:
+    # 세션 유지 여부를 URL로 먼저 판단
+    if "login" not in driver.current_url.lower():
         _st("세션 유지됨 → 로그인 생략")
         return
 
-    _st(f"로그인 중: {email}")
+    # 이메일 입력창 탐색 (버튼 클릭 없이 바로)
     try:
-        pw_input = wait.until(EC.visibility_of_element_located((By.XPATH,
-            "//input[contains(@placeholder,'password') or contains(@placeholder,'Password')]"
-        )))
+        email_input = wait.until(EC.visibility_of_element_located((By.XPATH, _EMAIL_XPATH)))
+    except TimeoutException:
+        raise RuntimeError("이메일 입력창을 찾을 수 없음 (로그인 페이지 구조 확인 필요)")
+
+    try:
+        pw_input = wait.until(EC.visibility_of_element_located((By.XPATH, _PW_XPATH)))
     except TimeoutException:
         raise RuntimeError("비밀번호 입력창을 찾을 수 없음")
 
+    _st(f"로그인 중: {email}")
     email_input.clear()
     email_input.send_keys(email)
     pw_input.clear()
     pw_input.send_keys(password)
-    time.sleep(0.2)  # 입력 안정화
-    pw_input.send_keys(Keys.RETURN)   # 버튼 클릭 없이 Enter로 제출
+    time.sleep(0.2)
+    pw_input.send_keys(Keys.RETURN)  # 버튼 클릭 없이 Enter로 제출
     _st("로그인 완료, 페이지 전환 대기...")
 
-    # 로그인 후 URL이 login에서 벗어날 때까지 대기
     try:
         wait.until(lambda d: "login" not in d.current_url.lower())
     except TimeoutException:
@@ -258,11 +271,7 @@ def _do_submit(driver, code: str, login_url: str, email: str, password: str, _st
         ),
         label="confirm 버튼",
     )
-    time.sleep(1.5)
-
-    # ── Step 7: 결과 확인 ────────────────────────────────────────
-    _st("결과 확인 중...")
-    _check_submit_result(driver, _st, timeout=5.0)
+    time.sleep(0.5)
 
 
 def submit_order_code(
@@ -373,7 +382,7 @@ def _do_no_more(driver, login_url: str, email: str, password: str, _st) -> None:
         ),
         label="Done/OK 버튼",
     )
-    time.sleep(1.0)
+    time.sleep(0.5)
     _st("완료!")
 
 
