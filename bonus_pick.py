@@ -1,5 +1,5 @@
 """
-보너스픽 — 수동 코드 자동 입력 앱
+보너스픽 — No more → Done/OK 자동 클릭 앱
 
 실행: python bonus_pick.py
 설정: bonus_config.json (자동 저장/복원)
@@ -7,7 +7,6 @@
 import datetime
 import json
 import queue
-import re
 import sys
 import threading
 import tkinter as tk
@@ -25,7 +24,7 @@ sys.path.insert(0, str(BASE_DIR))
 from src.logger_config import setup_logger
 
 try:
-    from src.browser_controller import AutoCancelled, submit_order_code
+    from src.browser_controller import AutoCancelled, click_no_more
     SELENIUM_OK = True
 except ImportError:
     SELENIUM_OK = False
@@ -40,7 +39,6 @@ DEFAULT_CONFIG = {
     "account_index": 0,
 }
 
-CODE_PATTERN = re.compile(r'^[A-Za-z0-9]{9}$')
 logger = setup_logger("bonus_pick")
 
 # 단계 정의: (표시 이름, 감지 키워드 목록)
@@ -49,9 +47,8 @@ STEPS = [
     ("로그인",       ["로그인 페이지 접속", "로그인 필요", "로그인 완료", "세션 유지"]),
     ("홈 이동",      ["홈 접속", "홈으로 이동", "홈 접속 완료"]),
     ("메뉴 선택",    ["Quickly buy", "Invited me"]),
-    ("코드 입력",    ["코드 입력 중"]),
-    ("제출",         ["Confirm 버튼"]),
-    ("결과 확인",    ["결과 확인 중", "결과 메시지", "성공 확인"]),
+    ("No more",      ["No more 클릭"]),
+    ("Done/OK",      ["Done/OK 클릭", "완료"]),
 ]
 
 # ---------------------------------------------------------------------------
@@ -112,16 +109,16 @@ class BonusPickApp(tk.Tk):
         super().__init__()
         self.title("보너스픽")
         self.resizable(True, True)
-        self.minsize(580, 560)
+        self.minsize(580, 500)
         self.configure(bg=C["bg"])
 
         self._auto_cancel_event: threading.Event = threading.Event()
         self._msg_queue: queue.Queue = queue.Queue()
         self._running: bool = False
-        self._code_history: list = []
+        self._run_history: list = []       # 실행 시각 문자열 목록
         self._log_lines: list = []
-        self._submitted_codes_full: list = []
-        self._current_step: int = -1   # -1=대기, 0~N=진행, N+1=완료
+        self._run_records: list = []       # {success, fail, datetime}
+        self._current_step: int = -1
 
         cfg = load_config()
         self._accounts: list = list(cfg.get("accounts", []))
@@ -273,45 +270,18 @@ class BonusPickApp(tk.Tk):
         bento.rowconfigure(3, weight=1)   # 로그 카드만 세로 확장
 
         # ╔══════════════════════════════════════╗
-        # ║  A: 코드 입력  (col 0, row 0–1)     ║
+        # ║  A: 실행 제어  (col 0, row 0–1)     ║
         # ╚══════════════════════════════════════╝
         ca = self._make_card(bento)
         ca._outer.grid(row=0, column=0, rowspan=2, sticky="nsew",
                        padx=(0, G), pady=(0, G))
 
-        tk.Label(ca, text="코드 입력",
+        tk.Label(ca, text="실행 제어",
                  bg=C["panel"], fg=C["accent"],
-                 font=("Segoe UI", 8, "bold")).pack(anchor=tk.W, pady=(0, 8))
-
-        input_box = tk.Frame(ca, bg=C["code_bg"],
-                             highlightbackground=C["border"],
-                             highlightthickness=1)
-        input_box.pack(fill=tk.X)
-
-        self._code_var = tk.StringVar()
-        self._code_var.trace_add("write", self._on_code_change)
-        self._code_entry = tk.Entry(
-            input_box,
-            textvariable=self._code_var,
-            font=("Consolas", 28, "bold"),
-            fg=C["yellow"], bg=C["code_bg"],
-            insertbackground=C["yellow"],
-            relief=tk.FLAT, justify=tk.CENTER,
-            width=10,
-        )
-        self._code_entry.pack(fill=tk.X, padx=10, pady=(14, 4))
-        self._code_entry.bind("<Return>", lambda e: self._run_submit())
-
-        self._valid_var = tk.StringVar(value="영숫자 9자리 입력 후 Enter")
-        self._valid_label = tk.Label(
-            input_box, textvariable=self._valid_var,
-            font=("Segoe UI", 8), fg=C["fg_dim"],
-            bg=C["code_bg"], pady=6,
-        )
-        self._valid_label.pack()
+                 font=("Segoe UI", 8, "bold")).pack(anchor=tk.W, pady=(0, 12))
 
         btn_row = tk.Frame(ca, bg=C["panel"])
-        btn_row.pack(fill=tk.X, pady=(10, 0))
+        btn_row.pack(fill=tk.X)
         self._run_btn = ttk.Button(btn_row, text="▶  실행",
                                    style="Start.TButton",
                                    command=self._run_submit)
@@ -324,15 +294,13 @@ class BonusPickApp(tk.Tk):
 
         tk.Frame(ca, bg=C["border"], height=1).pack(fill=tk.X, pady=(12, 6))
 
-        hist_row = tk.Frame(ca, bg=C["panel"])
-        hist_row.pack(fill=tk.X)
-        tk.Label(hist_row, text="최근 실행:",
+        tk.Label(ca, text="최근 실행:",
                  font=("Segoe UI", 8), fg=C["fg_dim"],
-                 bg=C["panel"]).pack(side=tk.LEFT)
+                 bg=C["panel"]).pack(anchor=tk.W)
         self._history_var = tk.StringVar(value="없음")
-        tk.Label(hist_row, textvariable=self._history_var,
+        tk.Label(ca, textvariable=self._history_var,
                  font=("Consolas", 8), fg=C["accent"], bg=C["panel"],
-                 wraplength=190, justify=tk.LEFT).pack(side=tk.LEFT, padx=4)
+                 wraplength=210, justify=tk.LEFT).pack(anchor=tk.W, padx=2, pady=(2, 0))
 
         # ╔══════════════════════════════════════╗
         # ║  B: 사이트 설정  (col 1, row 0)     ║
@@ -343,7 +311,7 @@ class BonusPickApp(tk.Tk):
         cb.columnconfigure(3, weight=1)
 
         if not SELENIUM_OK:
-            ttk.Label(cb, text="⚠  selenium 미설치 — 자동 입력 불가",
+            ttk.Label(cb, text="⚠  selenium 미설치 — 자동 클릭 불가",
                       foreground=C["error"],
                       style="Panel.TLabel").grid(
                 row=0, column=0, columnspan=4, sticky=tk.W, pady=(0, 6))
@@ -419,19 +387,16 @@ class BonusPickApp(tk.Tk):
         step_row.pack(fill=tk.X)
 
         for i, (name, _) in enumerate(STEPS):
-            # 원형 인디케이터
             circ = tk.Label(step_row, text="○",
                             bg=C["panel"], fg=C["border"],
                             font=("Segoe UI", 14))
             circ.pack(side=tk.LEFT)
-            # 단계 이름
             lbl = tk.Label(step_row, text=name,
                            bg=C["panel"], fg=C["fg_dim"],
                            font=("Segoe UI", 8))
             lbl.pack(side=tk.LEFT, padx=(1, 0))
             self._step_circles.append(circ)
             self._step_labels_w.append(lbl)
-            # 화살표 (마지막 단계 제외)
             if i < len(STEPS) - 1:
                 tk.Label(step_row, text=" → ",
                          bg=C["panel"], fg=C["border"],
@@ -469,8 +434,6 @@ class BonusPickApp(tk.Tk):
         self._log.tag_configure("error",  foreground=C["error"])
         self._log.tag_configure("ok",     foreground=C["ok"],
                                 font=("Consolas", 10, "italic"))
-        self._log.tag_configure("code",   foreground=C["yellow"],
-                                font=("Consolas", 10, "bold"))
 
     # ------------------------------------------------------------------
     # 단계 진행 표시
@@ -485,7 +448,6 @@ class BonusPickApp(tk.Tk):
         return -1
 
     def _update_step_display(self, step: int, done: bool = False, error: bool = False) -> None:
-        """단계 인디케이터 색상 갱신."""
         self._current_step = step
         for i, (circ, lbl) in enumerate(
                 zip(self._step_circles, self._step_labels_w)):
@@ -509,36 +471,15 @@ class BonusPickApp(tk.Tk):
             lbl.config(fg=C["fg_dim"])
 
     # ------------------------------------------------------------------
-    # 코드 유효성 실시간 표시
-    # ------------------------------------------------------------------
-
-    def _on_code_change(self, *_) -> None:
-        code = self._code_var.get().strip()
-        if not code:
-            self._valid_var.set("영숫자 9자리 입력 후 Enter")
-            self._valid_label.config(fg=C["fg_dim"])
-        elif CODE_PATTERN.match(code):
-            self._valid_var.set("✓ 유효한 코드")
-            self._valid_label.config(fg=C["ok"])
-        else:
-            self._valid_var.set(f"✗  {len(code)}/9자  (영숫자만 허용)")
-            self._valid_label.config(fg=C["error"])
-
-    # ------------------------------------------------------------------
     # 실행 / 중지
     # ------------------------------------------------------------------
 
     def _run_submit(self) -> None:
         if self._running:
             return
-        code = self._code_var.get().strip()
-        if not CODE_PATTERN.match(code):
-            self._append_log("⚠ 영숫자 9자리 코드를 입력하세요.", tag="error")
-            return
         if not SELENIUM_OK:
-            self._append_log("⚠ selenium 미설치 — 자동 입력 불가", tag="error")
+            self._append_log("⚠ selenium 미설치 — 자동 클릭 불가", tag="error")
             return
-
         try:
             port = int(self._port_var.get())
         except ValueError:
@@ -552,20 +493,17 @@ class BonusPickApp(tk.Tk):
         self._running = True
         self._run_btn.config(state=tk.DISABLED)
         self._stop_btn.config(state=tk.NORMAL)
-        self._code_entry.config(state=tk.DISABLED)
-        self._status_var.set(f"실행 중: {code}")
+        self._status_var.set("실행 중...")
         self._reset_steps()
 
-        # 히스토리 갱신
-        if code in self._code_history:
-            self._code_history.remove(code)
-        self._code_history.insert(0, code)
-        self._code_history = self._code_history[:8]
-        self._history_var.set("  ".join(self._code_history))
+        now = datetime.datetime.now().strftime("%H:%M:%S")
+        self._run_history.insert(0, now)
+        self._run_history = self._run_history[:8]
+        self._history_var.set("\n".join(self._run_history))
 
         threading.Thread(
             target=self._run_auto_input,
-            args=(code, port, site_urls),
+            args=(port, site_urls),
             daemon=True,
         ).start()
 
@@ -573,18 +511,17 @@ class BonusPickApp(tk.Tk):
         self._auto_cancel_event.set()
         self._status_var.set("중지 요청...")
 
-    def _run_auto_input(self, code: str, port: int, site_urls: list) -> None:
+    def _run_auto_input(self, port: int, site_urls: list) -> None:
         accounts = [a for a in self._accounts if a.get("enabled", True)]
         if not accounts:
             self._msg_queue.put(("error",
                 "⚠ 활성화된 계정이 없습니다. 계정 관리에서 ☑ 체크하세요."))
-            self._msg_queue.put(("__done__", code))
+            self._msg_queue.put(("__done__", False))
             return
 
         total = len(accounts)
         self._msg_queue.put(("system",
-            f"━━ 실행 시작: {code} | 활성 계정 {total}개 ━━"))
-        self._msg_queue.put(("code", f"  코드: {code}"))
+            f"━━ 실행 시작 | 활성 계정 {total}개 ━━"))
 
         success_count = 0
         fail_count = 0
@@ -601,8 +538,8 @@ class BonusPickApp(tk.Tk):
                 self._msg_queue.put(("system", f"  · {msg}"))
 
             try:
-                submit_order_code(
-                    code, port, site_urls,
+                click_no_more(
+                    port, site_urls,
                     email=acct["email"],
                     password=acct["password"],
                     status_cb=_status,
@@ -620,16 +557,14 @@ class BonusPickApp(tk.Tk):
         tag = "ok" if fail_count == 0 else "system"
         self._msg_queue.put((
             tag,
-            f"━━ 완료: {code} | 성공 {success_count} / 실패 {fail_count} / 총 {total} ━━",
+            f"━━ 완료 | 성공 {success_count} / 실패 {fail_count} / 총 {total} ━━",
         ))
-
-        self._submitted_codes_full.append({
-            "code":     code,
+        self._run_records.append({
             "success":  success_count,
             "fail":     fail_count,
             "datetime": datetime.datetime.now().isoformat(timespec="seconds"),
         })
-        self._msg_queue.put(("__done__", code))
+        self._msg_queue.put(("__done__", fail_count == 0))
 
     # ------------------------------------------------------------------
     # 큐 폴링
@@ -638,32 +573,28 @@ class BonusPickApp(tk.Tk):
     def _poll_queue(self) -> None:
         try:
             while True:
-                tag, text = self._msg_queue.get_nowait()
+                tag, data = self._msg_queue.get_nowait()
                 if tag == "__done__":
-                    self._on_submit_done(text)
+                    self._on_submit_done(data)
                 else:
-                    self._append_log(text, tag=tag)
+                    self._append_log(data, tag=tag)
         except queue.Empty:
             pass
         self.after(200, self._poll_queue)
 
-    def _on_submit_done(self, code: str, success: bool = True) -> None:
+    def _on_submit_done(self, success: bool = True) -> None:
         self._running = False
         self._run_btn.config(state=tk.NORMAL)
         self._stop_btn.config(state=tk.DISABLED)
-        self._code_entry.config(state=tk.NORMAL)
-        self._code_entry.focus_set()
-        # 모든 단계 완료 표시
         self._update_step_display(len(STEPS) - 1, done=True)
         self._status_var.set(
-            f"완료: {code}  |  {datetime.datetime.now().strftime('%H:%M:%S')}")
+            f"완료  |  {datetime.datetime.now().strftime('%H:%M:%S')}")
 
     # ------------------------------------------------------------------
     # 로그
     # ------------------------------------------------------------------
 
     def _append_log(self, text: str, tag: str = "") -> None:
-        # 단계 감지 (system 메시지에서만)
         if tag == "system" and self._running:
             step = self._detect_step(text)
             if step >= 0:
@@ -704,18 +635,18 @@ class BonusPickApp(tk.Tk):
                                  tag if tag else ())
             self._log.see(tk.END)
             self._log.config(state=tk.DISABLED)
-        self._submitted_codes_full = data.get("submitted_codes", [])
-        history = data.get("code_history", [])
+        self._run_records = data.get("run_records", [])
+        history = data.get("run_history", [])
         if history:
-            self._code_history = history[:8]
-            self._history_var.set("  ".join(self._code_history))
+            self._run_history = history[:8]
+            self._history_var.set("\n".join(self._run_history))
 
     def _save_log_data(self) -> None:
         try:
             data = {
-                "submitted_codes": self._submitted_codes_full,
-                "log_lines":       self._log_lines[-2000:],
-                "code_history":    self._code_history,
+                "run_records":  self._run_records,
+                "log_lines":    self._log_lines[-2000:],
+                "run_history":  self._run_history,
             }
             with open(LOG_DATA_PATH, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
@@ -733,12 +664,11 @@ class BonusPickApp(tk.Tk):
         if not path:
             return
         sep = "═" * 60
-        out = [sep, f"  실행 기록  (총 {len(self._submitted_codes_full)}건)", sep]
-        for i, c in enumerate(self._submitted_codes_full, 1):
-            dt = c.get("datetime", "")[:19].replace("T", " ")
+        out = [sep, f"  실행 기록  (총 {len(self._run_records)}건)", sep]
+        for i, r in enumerate(self._run_records, 1):
+            dt = r.get("datetime", "")[:19].replace("T", " ")
             out.append(
-                f"  {i:>3}.  {c['code']}"
-                f"   성공 {c.get('success',0)} / 실패 {c.get('fail',0)}"
+                f"  {i:>3}.  성공 {r.get('success', 0)} / 실패 {r.get('fail', 0)}"
                 f"   {dt}")
         out += ["", sep, "  실행 로그", sep]
         for item in self._log_lines:
