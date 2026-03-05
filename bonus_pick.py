@@ -43,6 +43,17 @@ DEFAULT_CONFIG = {
 CODE_PATTERN = re.compile(r'^[A-Za-z0-9]{9}$')
 logger = setup_logger("bonus_pick")
 
+# 단계 정의: (표시 이름, 감지 키워드 목록)
+STEPS = [
+    ("Chrome 실행",  ["Chrome 실행 중"]),
+    ("로그인",       ["로그인 페이지 접속", "로그인 필요", "로그인 완료", "세션 유지"]),
+    ("홈 이동",      ["홈 접속", "홈으로 이동", "홈 접속 완료"]),
+    ("메뉴 선택",    ["Quickly buy", "Invited me"]),
+    ("코드 입력",    ["코드 입력 중"]),
+    ("제출",         ["Confirm 버튼"]),
+    ("결과 확인",    ["결과 확인 중", "결과 메시지", "성공 확인"]),
+]
+
 # ---------------------------------------------------------------------------
 # 색상 팔레트
 # ---------------------------------------------------------------------------
@@ -110,6 +121,7 @@ class BonusPickApp(tk.Tk):
         self._code_history: list = []
         self._log_lines: list = []
         self._submitted_codes_full: list = []
+        self._current_step: int = -1   # -1=대기, 0~N=진행, N+1=완료
 
         cfg = load_config()
         self._accounts: list = list(cfg.get("accounts", []))
@@ -258,7 +270,7 @@ class BonusPickApp(tk.Tk):
         bento.pack(fill=tk.BOTH, expand=True, padx=G, pady=G)
         bento.columnconfigure(0, weight=0, minsize=240)
         bento.columnconfigure(1, weight=1)
-        bento.rowconfigure(2, weight=1)
+        bento.rowconfigure(3, weight=1)   # 로그 카드만 세로 확장
 
         # ╔══════════════════════════════════════╗
         # ║  A: 코드 입력  (col 0, row 0–1)     ║
@@ -395,10 +407,41 @@ class BonusPickApp(tk.Tk):
                    command=self._export_text).pack(side=tk.LEFT)
 
         # ╔══════════════════════════════════════╗
-        # ║  D: 실행 로그  (full, row 2, 확장)  ║
+        # ║  D: 진행 단계  (full, row 2)        ║
+        # ╚══════════════════════════════════════╝
+        cstep = self._make_card(bento, "진행 단계")
+        cstep._outer.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(0, G))
+
+        self._step_circles: list = []
+        self._step_labels_w: list = []
+
+        step_row = tk.Frame(cstep, bg=C["panel"])
+        step_row.pack(fill=tk.X)
+
+        for i, (name, _) in enumerate(STEPS):
+            # 원형 인디케이터
+            circ = tk.Label(step_row, text="○",
+                            bg=C["panel"], fg=C["border"],
+                            font=("Segoe UI", 14))
+            circ.pack(side=tk.LEFT)
+            # 단계 이름
+            lbl = tk.Label(step_row, text=name,
+                           bg=C["panel"], fg=C["fg_dim"],
+                           font=("Segoe UI", 8))
+            lbl.pack(side=tk.LEFT, padx=(1, 0))
+            self._step_circles.append(circ)
+            self._step_labels_w.append(lbl)
+            # 화살표 (마지막 단계 제외)
+            if i < len(STEPS) - 1:
+                tk.Label(step_row, text=" → ",
+                         bg=C["panel"], fg=C["border"],
+                         font=("Segoe UI", 9)).pack(side=tk.LEFT)
+
+        # ╔══════════════════════════════════════╗
+        # ║  E: 실행 로그  (full, row 3, 확장)  ║
         # ╚══════════════════════════════════════╝
         cd = self._make_card(bento, "실행 로그")
-        cd._outer.grid(row=2, column=0, columnspan=2, sticky="nsew")
+        cd._outer.grid(row=3, column=0, columnspan=2, sticky="nsew")
         cd.columnconfigure(0, weight=1)
         cd.rowconfigure(0, weight=1)
 
@@ -428,6 +471,42 @@ class BonusPickApp(tk.Tk):
                                 font=("Consolas", 10, "italic"))
         self._log.tag_configure("code",   foreground=C["yellow"],
                                 font=("Consolas", 10, "bold"))
+
+    # ------------------------------------------------------------------
+    # 단계 진행 표시
+    # ------------------------------------------------------------------
+
+    def _detect_step(self, text: str) -> int:
+        """텍스트에서 해당 단계 인덱스 반환. 미감지 시 -1."""
+        for i, (_, keywords) in enumerate(STEPS):
+            for kw in keywords:
+                if kw.lower() in text.lower():
+                    return i
+        return -1
+
+    def _update_step_display(self, step: int, done: bool = False, error: bool = False) -> None:
+        """단계 인디케이터 색상 갱신."""
+        self._current_step = step
+        for i, (circ, lbl) in enumerate(
+                zip(self._step_circles, self._step_labels_w)):
+            if error and i == step:
+                circ.config(text="✕", fg=C["error"])
+                lbl.config(fg=C["error"])
+            elif done or i < step:
+                circ.config(text="●", fg=C["ok"])
+                lbl.config(fg=C["ok"])
+            elif i == step:
+                circ.config(text="●", fg=C["accent"])
+                lbl.config(fg=C["fg_bright"])
+            else:
+                circ.config(text="○", fg=C["border"])
+                lbl.config(fg=C["fg_dim"])
+
+    def _reset_steps(self) -> None:
+        self._current_step = -1
+        for circ, lbl in zip(self._step_circles, self._step_labels_w):
+            circ.config(text="○", fg=C["border"])
+            lbl.config(fg=C["fg_dim"])
 
     # ------------------------------------------------------------------
     # 코드 유효성 실시간 표시
@@ -475,6 +554,7 @@ class BonusPickApp(tk.Tk):
         self._stop_btn.config(state=tk.NORMAL)
         self._code_entry.config(state=tk.DISABLED)
         self._status_var.set(f"실행 중: {code}")
+        self._reset_steps()
 
         # 히스토리 갱신
         if code in self._code_history:
@@ -567,12 +647,14 @@ class BonusPickApp(tk.Tk):
             pass
         self.after(200, self._poll_queue)
 
-    def _on_submit_done(self, code: str) -> None:
+    def _on_submit_done(self, code: str, success: bool = True) -> None:
         self._running = False
         self._run_btn.config(state=tk.NORMAL)
         self._stop_btn.config(state=tk.DISABLED)
         self._code_entry.config(state=tk.NORMAL)
         self._code_entry.focus_set()
+        # 모든 단계 완료 표시
+        self._update_step_display(len(STEPS) - 1, done=True)
         self._status_var.set(
             f"완료: {code}  |  {datetime.datetime.now().strftime('%H:%M:%S')}")
 
@@ -581,6 +663,11 @@ class BonusPickApp(tk.Tk):
     # ------------------------------------------------------------------
 
     def _append_log(self, text: str, tag: str = "") -> None:
+        # 단계 감지 (system 메시지에서만)
+        if tag == "system" and self._running:
+            step = self._detect_step(text)
+            if step >= 0:
+                self._update_step_display(step)
         self._log_lines.append({"text": text, "tag": tag})
         if len(self._log_lines) > 2000:
             self._log_lines = self._log_lines[-2000:]
