@@ -356,16 +356,23 @@ class BonusPickApp(tk.Tk):
         while len(saved_urls) < 10:
             saved_urls.append("")
         self._site_url_vars = [tk.StringVar(value=saved_urls[i]) for i in range(10)]
+        self._site_url_entries = []
 
         for pr, (li, ri) in enumerate([(0,1),(2,3),(4,5),(6,7),(8,9)], start=1):
             ttk.Label(cb, text=f"사이트 {li+1}", style="Panel.TLabel").grid(
                 row=pr, column=0, sticky=tk.W, pady=2)
-            ttk.Entry(cb, textvariable=self._site_url_vars[li]).grid(
-                row=pr, column=1, sticky=tk.EW, padx=(6, 14), pady=2)
+            e_l = tk.Entry(cb, textvariable=self._site_url_vars[li],
+                           bg=C["input"], fg=C["fg"], insertbackground=C["fg"],
+                           relief=tk.FLAT, bd=1)
+            e_l.grid(row=pr, column=1, sticky=tk.EW, padx=(6, 14), pady=2)
+            self._site_url_entries.append(e_l)
             ttk.Label(cb, text=f"사이트 {ri+1}", style="Panel.TLabel").grid(
                 row=pr, column=2, sticky=tk.W, pady=2)
-            ttk.Entry(cb, textvariable=self._site_url_vars[ri]).grid(
-                row=pr, column=3, sticky=tk.EW, padx=(6, 0), pady=2)
+            e_r = tk.Entry(cb, textvariable=self._site_url_vars[ri],
+                           bg=C["input"], fg=C["fg"], insertbackground=C["fg"],
+                           relief=tk.FLAT, bd=1)
+            e_r.grid(row=pr, column=3, sticky=tk.EW, padx=(6, 0), pady=2)
+            self._site_url_entries.append(e_r)
 
         # Chrome 포트 + 접속 테스트
         ttk.Label(cb, text="Chrome 포트", style="Panel.TLabel").grid(
@@ -747,25 +754,32 @@ class BonusPickApp(tk.Tk):
                 f"총 {len(self._accounts)}개  |  활성 {len(enabled)}개")
 
     def _test_connections(self) -> None:
-        """입력된 사이트 URL 접속 가능 여부를 백그라운드 스레드에서 테스트."""
+        """입력된 사이트 URL 접속 가능 여부를 테스트. 실패 URL은 빨간색으로 표시."""
         import urllib.request
-        urls = [v.get().strip() for v in self._site_url_vars if v.get().strip()]
-        if not urls:
+        pairs = [(self._site_url_entries[i], v.get().strip())
+                 for i, v in enumerate(self._site_url_vars) if v.get().strip()]
+        if not pairs:
             messagebox.showinfo("접속 테스트", "입력된 사이트 URL이 없습니다.")
             return
 
+        # 테스트 전 모든 대상 배경 초기화
+        for entry, _ in pairs:
+            entry.config(bg=C["input"])
+
         def _run():
             lines = []
-            for url in urls:
+            for entry, url in pairs:
                 try:
                     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
                     with urllib.request.urlopen(req, timeout=8):
                         lines.append(f"✓  {url}")
-                except Exception as e:
-                    lines.append(f"✗  {url}\n     {e}")
+                        self.after(0, lambda e=entry: e.config(bg=C["input"]))
+                except Exception as ex:
+                    lines.append(f"✗  {url}\n     {ex}")
+                    self.after(0, lambda e=entry: e.config(bg="#5c1a1a"))
             self.after(0, lambda m="\n\n".join(lines): messagebox.showinfo("접속 테스트 결과", m))
 
-        messagebox.showinfo("접속 테스트", f"{len(urls)}개 사이트 접속 테스트 중...\n완료되면 결과 팝업이 표시됩니다.")
+        messagebox.showinfo("접속 테스트", f"{len(pairs)}개 사이트 접속 테스트 중...\n완료되면 결과 팝업이 표시됩니다.")
         threading.Thread(target=_run, daemon=True).start()
 
     def _open_account_manager(self) -> None:
