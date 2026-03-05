@@ -159,12 +159,33 @@ def _do_login(driver, wait, login_url: str, email: str, password: str, _st,
 
     _chk(cancel_event)
 
-    # 로그인 버튼 클릭 (실패 시 Enter 폴백)
-    try:
-        btn = wait.until(EC.element_to_be_clickable((By.XPATH, _LOGIN_BTN_XPATH)))
-        _js_click(driver, btn)
-        _st("로그인 버튼 클릭 완료")
-    except TimeoutException:
+    # 로그인 버튼 클릭 — EC.element_to_be_clickable 대신 find_elements + JS click
+    time.sleep(0.5)  # 버튼 렌더링 대기
+    clicked = False
+    _LOGIN_CANDIDATES = [
+        "//button[@type='submit']",
+        "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'login')]",
+        "//button[contains(.,'로그인')]",
+        "//div[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'login') and not(.//input) and not(.//button)]",
+        "//div[contains(.,'로그인') and not(.//input) and not(.//button)]",
+        "//span[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'login') and not(.//input)]",
+        "//a[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'login')]",
+    ]
+    for xpath in _LOGIN_CANDIDATES:
+        els = driver.find_elements(By.XPATH, xpath)
+        for el in els:
+            try:
+                if el.is_displayed():
+                    _js_click(driver, el)
+                    _st("로그인 버튼 클릭 완료")
+                    clicked = True
+                    break
+            except Exception:
+                pass
+        if clicked:
+            break
+
+    if not clicked:
         pw_input.send_keys(Keys.RETURN)
         _st("로그인 버튼 미발견 → Enter 제출")
 
