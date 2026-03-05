@@ -3,7 +3,7 @@ dsj44.com 자동화 모듈.
 
 흐름 A — 주문 코드 입력 (submit_order_code):
   1. 로그인  2. 홈 이동  3. Quickly buy coin  4. Invited me
-  5. 코드 입력  6. Confirm  7. 결과 확인
+  5. 코드 입력  6. Confirm
 
 흐름 B — No more 클릭 (click_no_more):
   1. 로그인  2. 홈 이동  3. Quickly buy coin  4. Invited me
@@ -36,6 +36,12 @@ class AutoCancelled(Exception):
     """중지 버튼으로 자동 입력이 취소됐을 때 발생."""
 
 
+def _chk(cancel_event) -> None:
+    """cancel_event 가 set 되어 있으면 AutoCancelled 발생."""
+    if cancel_event and cancel_event.is_set():
+        raise AutoCancelled()
+
+
 def _open_driver(status_cb=None) -> webdriver.Chrome:
     """Selenium으로 Chrome을 직접 실행하고 WebDriver 반환."""
     def _st(msg: str) -> None:
@@ -50,6 +56,8 @@ def _open_driver(status_cb=None) -> webdriver.Chrome:
     options.add_argument("--disable-popup-blocking")
     options.add_argument("--disable-extensions")
     driver = webdriver.Chrome(options=options)
+    # h5 모바일 레이아웃으로 렌더링 (로그인 버튼 등이 화면 안에 표시됨)
+    driver.set_window_size(480, 860)
     _st("Chrome 실행 완료")
     return driver
 
@@ -92,12 +100,33 @@ _PW_XPATH = (
     " or contains(translate(@placeholder,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'비밀번호')]"
 )
 
+_LOGIN_BTN_XPATH = (
+    "//button["
+    f"  contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'login')"
+    f"  or contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'log in')"
+    f"  or contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'sign in')"
+    f"  or contains(text(),'로그인')"
+    f"  or @type='submit'"
+    "]"
+    " | //div["
+    f"  contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'login')"
+    f"  or contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'log in')"
+    f"  or contains(text(),'로그인')"
+    "]"
+    " | //span["
+    f"  contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'login')"
+    f"  or contains(text(),'로그인')"
+    "]"
+)
 
-def _do_login(driver, wait, login_url: str, email: str, password: str, _st) -> None:
+
+def _do_login(driver, wait, login_url: str, email: str, password: str, _st,
+              cancel_event=None) -> None:
     """
-    로그인 URL 접속 → 이메일/비밀번호 바로 입력(버튼 클릭 없음) → Enter 제출 → URL 전환 대기.
+    로그인 URL 접속 → 이메일/비밀번호 입력 → 로그인 버튼 클릭(실패 시 Enter 폴백).
     세션이 이미 유지된 경우 로그인 단계를 생략한다.
     """
+    _chk(cancel_event)
     _st("로그인 페이지 접속 중...")
     driver.get(login_url)
     time.sleep(1)  # 초기 리다이렉트 대기
@@ -107,7 +136,9 @@ def _do_login(driver, wait, login_url: str, email: str, password: str, _st) -> N
         _st("세션 유지됨 → 로그인 생략")
         return
 
-    # 이메일 입력창 탐색 (버튼 클릭 없이 바로)
+    _chk(cancel_event)
+
+    # 이메일 입력창 탐색
     try:
         email_input = wait.until(EC.visibility_of_element_located((By.XPATH, _EMAIL_XPATH)))
     except TimeoutException:
@@ -118,6 +149,7 @@ def _do_login(driver, wait, login_url: str, email: str, password: str, _st) -> N
     except TimeoutException:
         raise RuntimeError("비밀번호 입력창을 찾을 수 없음")
 
+    _chk(cancel_event)
     _st(f"로그인 중: {email}")
     email_input.clear()
     email_input.send_keys(email)
@@ -125,21 +157,9 @@ def _do_login(driver, wait, login_url: str, email: str, password: str, _st) -> N
     pw_input.send_keys(password)
     time.sleep(0.3)
 
+    _chk(cancel_event)
+
     # 로그인 버튼 클릭 (실패 시 Enter 폴백)
-    _LOGIN_BTN_XPATH = (
-        "//button["
-        f"  contains({_ci('text()')}, 'login')"
-        f"  or contains({_ci('text()')}, 'log in')"
-        f"  or contains({_ci('text()')}, 'sign in')"
-        f"  or contains({_ci('text()')}, '로그인')"
-        f"  or @type='submit'"
-        "]"
-        " | //div["
-        f"  contains({_ci('text()')}, 'login')"
-        f"  or contains({_ci('text()')}, 'log in')"
-        f"  or contains({_ci('text()')}, '로그인')"
-        "]"
-    )
     try:
         btn = wait.until(EC.element_to_be_clickable((By.XPATH, _LOGIN_BTN_XPATH)))
         _js_click(driver, btn)
@@ -147,16 +167,17 @@ def _do_login(driver, wait, login_url: str, email: str, password: str, _st) -> N
     except TimeoutException:
         pw_input.send_keys(Keys.RETURN)
         _st("로그인 버튼 미발견 → Enter 제출")
-    _st("페이지 전환 대기...")
 
+    _st("페이지 전환 대기...")
     try:
         wait.until(lambda d: "login" not in d.current_url.lower())
     except TimeoutException:
         raise RuntimeError("로그인 후 페이지 전환 실패 — 이메일/비밀번호 확인 요망")
 
 
-def _go_home(driver, wait, _st) -> None:
+def _go_home(driver, wait, _st, cancel_event=None) -> None:
     """현재 URL이 h5 홈이 아닌 경우 홈으로 이동 후 핵심 요소 대기."""
+    _chk(cancel_event)
     if PC_HOST in driver.current_url or "#/home" not in driver.current_url:
         _st("h5 홈으로 이동 중...")
         driver.get(HOME_URL)
@@ -170,79 +191,23 @@ def _go_home(driver, wait, _st) -> None:
     _st("홈 접속 완료")
 
 
-def _check_submit_result(driver, _st, timeout: float = 5.0) -> None:
-    """
-    Confirm 클릭 후 결과 메시지를 폴링하여 성공/실패를 판별한다.
-    에러 키워드가 감지되면 RuntimeError 발생.
-    타임아웃까지 에러 미감지 시 성공으로 간주.
-    """
-    ERROR_KEYWORDS = [
-        "fail", "error", "invalid", "already", "incorrect", "wrong",
-        "expired", "not found", "unsuccessful", "denied", "exist",
-        "used", "repeat", "duplicate",
-    ]
-    SUCCESS_KEYWORDS = [
-        "success", "complete", "done", "submitted", "received", "ok",
-    ]
-
-    CONTAINER_XPATH = (
-        "//*["
-        "  contains(@class,'toast') or contains(@class,'alert') or"
-        "  contains(@class,'tip') or contains(@class,'notice') or"
-        "  contains(@class,'snack') or contains(@class,'msg') or"
-        "  contains(@class,'popup') or contains(@class,'result') or"
-        "  contains(@class,'modal-body') or contains(@class,'van-toast') or"
-        "  contains(@class,'van-dialog') or contains(@class,'van-notify')"
-        "]"
-    )
-
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            elements = driver.find_elements(By.XPATH, CONTAINER_XPATH)
-            for el in elements:
-                try:
-                    if not el.is_displayed():
-                        continue
-                    text = el.text.strip()
-                    if not text:
-                        continue
-                    text_lower = text.lower()
-                    for kw in ERROR_KEYWORDS:
-                        if kw in text_lower:
-                            raise RuntimeError(f"제출 실패 — 사이트 응답: {text}")
-                    for kw in SUCCESS_KEYWORDS:
-                        if kw in text_lower:
-                            _st(f"성공 확인: {text}")
-                            return
-                except RuntimeError:
-                    raise
-                except Exception:
-                    pass
-        except RuntimeError:
-            raise
-        except Exception:
-            pass
-        time.sleep(0.3)
-
-    _st("결과 메시지 미감지 → 성공으로 간주")
-
-
 # ---------------------------------------------------------------------------
 # 공개 API
 # ---------------------------------------------------------------------------
 
-def _do_submit(driver, code: str, login_url: str, email: str, password: str, _st) -> None:
+def _do_submit(driver, code: str, login_url: str, email: str, password: str, _st,
+               cancel_event=None) -> None:
     """단일 사이트에서 코드 입력 전체 흐름."""
     wait = WebDriverWait(driver, TIMEOUT)
 
     # ── Step 1: 로그인 ────────────────────────────────────────────
-    _do_login(driver, wait, login_url, email, password, _st)
+    _do_login(driver, wait, login_url, email, password, _st, cancel_event)
 
     # ── Step 2: 홈 이동 ──────────────────────────────────────────
-    _go_home(driver, wait, _st)
+    _go_home(driver, wait, _st, cancel_event)
 
     # ── Step 3: Quickly buy coin 클릭 ────────────────────────────
+    _chk(cancel_event)
     _st("Quickly buy coin 클릭 중...")
     _click(driver, wait,
         xpath=(
@@ -260,6 +225,7 @@ def _do_submit(driver, code: str, login_url: str, email: str, password: str, _st
     time.sleep(1.5)
 
     # ── Step 4: Invited me 클릭 ──────────────────────────────────
+    _chk(cancel_event)
     _st("Invited me 클릭 중...")
     _click(driver, wait,
         xpath=f"//*[contains({_ci('text()')}, 'invited me')]",
@@ -268,6 +234,7 @@ def _do_submit(driver, code: str, login_url: str, email: str, password: str, _st
     time.sleep(1.5)
 
     # ── Step 5: 코드 입력 ────────────────────────────────────────
+    _chk(cancel_event)
     _st(f"코드 입력 중: {code}")
     try:
         inp = wait.until(EC.visibility_of_element_located((By.XPATH,
@@ -282,7 +249,8 @@ def _do_submit(driver, code: str, login_url: str, email: str, password: str, _st
     except TimeoutException:
         raise RuntimeError("코드 입력창을 찾을 수 없음")
 
-    # ── Step 6: confirm 클릭 ─────────────────────────────────────
+    # ── Step 6: Confirm 클릭 ─────────────────────────────────────
+    _chk(cancel_event)
     _st("Confirm 버튼 클릭 중...")
     _click(driver, wait,
         xpath=(
@@ -309,8 +277,7 @@ def submit_order_code(
     지정 사이트에 로그인 후 코드 자동 입력.
     login_url이 리스트인 경우 실패 시 다음 URL로 순서대로 시도.
     """
-    if cancel_event and cancel_event.is_set():
-        raise AutoCancelled()
+    _chk(cancel_event)
 
     def _st(msg: str) -> None:
         logger.info(msg)
@@ -328,13 +295,16 @@ def submit_order_code(
 
     last_error = None
     for idx, url in enumerate(urls):
+        _chk(cancel_event)
         if len(urls) > 1:
             _st(f"[{idx+1}/{len(urls)}] {url}")
         driver = _open_driver(status_cb)
         try:
-            _do_submit(driver, code, url, email, password, _st)
+            _do_submit(driver, code, url, email, password, _st, cancel_event)
             _st("자동 입력 완료!")
             return
+        except AutoCancelled:
+            raise
         except Exception as e:
             last_error = e
             _st(f"✗ 사이트 {idx+1} 실패: {e}")
@@ -350,17 +320,19 @@ def submit_order_code(
     raise RuntimeError(f"모든 사이트({len(urls)}개) 실패: {last_error}")
 
 
-def _do_no_more(driver, login_url: str, email: str, password: str, _st) -> None:
+def _do_no_more(driver, login_url: str, email: str, password: str, _st,
+                cancel_event=None) -> None:
     """No more → Done/OK 흐름 단일 사이트 실행."""
     wait = WebDriverWait(driver, TIMEOUT)
 
     # ── Step 1: 로그인 ────────────────────────────────────────────
-    _do_login(driver, wait, login_url, email, password, _st)
+    _do_login(driver, wait, login_url, email, password, _st, cancel_event)
 
     # ── Step 2: 홈 이동 ──────────────────────────────────────────
-    _go_home(driver, wait, _st)
+    _go_home(driver, wait, _st, cancel_event)
 
     # ── Step 3: Quickly buy coin 클릭 ────────────────────────────
+    _chk(cancel_event)
     _st("Quickly buy coin 클릭 중...")
     _click(driver, wait,
         xpath=(
@@ -378,6 +350,7 @@ def _do_no_more(driver, login_url: str, email: str, password: str, _st) -> None:
     time.sleep(1.5)
 
     # ── Step 4: Invited me 클릭 ──────────────────────────────────
+    _chk(cancel_event)
     _st("Invited me 클릭 중...")
     _click(driver, wait,
         xpath=f"//*[contains({_ci('text()')}, 'invited me')]",
@@ -386,6 +359,7 @@ def _do_no_more(driver, login_url: str, email: str, password: str, _st) -> None:
     time.sleep(1.5)
 
     # ── Step 5: No more 클릭 ─────────────────────────────────────
+    _chk(cancel_event)
     _st("No more 클릭 중...")
     _click(driver, wait,
         xpath=f"//*[contains({_ci('text()')}, 'no more')]",
@@ -394,6 +368,7 @@ def _do_no_more(driver, login_url: str, email: str, password: str, _st) -> None:
     time.sleep(1.5)
 
     # ── Step 6: Done / OK 클릭 ───────────────────────────────────
+    _chk(cancel_event)
     _st("Done/OK 클릭 중...")
     _click(driver, wait,
         xpath=(
@@ -420,8 +395,7 @@ def click_no_more(
     No more → Done/OK 흐름 실행.
     login_url이 리스트인 경우 실패 시 다음 URL로 순서대로 시도.
     """
-    if cancel_event and cancel_event.is_set():
-        raise AutoCancelled()
+    _chk(cancel_event)
 
     def _st(msg: str) -> None:
         logger.info(msg)
@@ -439,13 +413,16 @@ def click_no_more(
 
     last_error = None
     for idx, url in enumerate(urls):
+        _chk(cancel_event)
         if len(urls) > 1:
             _st(f"[{idx+1}/{len(urls)}] {url}")
         driver = _open_driver(status_cb)
         try:
-            _do_no_more(driver, url, email, password, _st)
+            _do_no_more(driver, url, email, password, _st, cancel_event)
             _st("No more 완료!")
             return
+        except AutoCancelled:
+            raise
         except Exception as e:
             last_error = e
             _st(f"✗ 사이트 {idx+1} 실패: {e}")
