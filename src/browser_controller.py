@@ -55,7 +55,7 @@ def _open_driver(status_cb=None) -> webdriver.Chrome:
 
 def _js_click(driver, el) -> None:
     driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-    time.sleep(0.2)
+    time.sleep(0.1)
     driver.execute_script("arguments[0].click();", el)
 
 
@@ -79,6 +79,68 @@ def _ci(field: str) -> str:
     return f"translate({field},'{U}','{L}')"
 
 
+def _do_login(driver, wait, login_url: str, email: str, password: str, _st) -> None:
+    """
+    로그인 URL 접속 → 이메일/비밀번호 바로 입력 → 로그인 버튼 클릭 → URL 전환 대기.
+    이미 세션이 유지된 경우(홈으로 리다이렉트) 로그인 단계를 생략한다.
+    """
+    _st("로그인 페이지 접속 중...")
+    driver.get(login_url)
+
+    # 이메일 입력창 대기 — 세션 유지 시 홈으로 리다이렉트되므로 TimeoutException 발생
+    try:
+        email_input = wait.until(EC.visibility_of_element_located((By.XPATH,
+            "//input[contains(@placeholder,'email') or contains(@placeholder,'Email')]"
+        )))
+    except TimeoutException:
+        _st("세션 유지됨 → 로그인 생략")
+        return
+
+    _st(f"로그인 중: {email}")
+    try:
+        pw_input = wait.until(EC.visibility_of_element_located((By.XPATH,
+            "//input[contains(@placeholder,'password') or contains(@placeholder,'Password')]"
+        )))
+    except TimeoutException:
+        raise RuntimeError("비밀번호 입력창을 찾을 수 없음")
+
+    email_input.clear()
+    email_input.send_keys(email)
+    pw_input.clear()
+    pw_input.send_keys(password)
+    time.sleep(0.3)  # 입력 안정화
+
+    try:
+        login_btn = wait.until(EC.element_to_be_clickable(
+            (By.XPATH, "//div[contains(@class,'login-btn')]")
+        ))
+    except TimeoutException:
+        raise RuntimeError("로그인 버튼을 찾을 수 없음")
+    _js_click(driver, login_btn)
+    _st("로그인 완료, 페이지 전환 대기...")
+
+    # 로그인 후 URL이 login에서 벗어날 때까지 대기
+    try:
+        wait.until(lambda d: "login" not in d.current_url.lower())
+    except TimeoutException:
+        raise RuntimeError("로그인 후 페이지 전환 실패 — 이메일/비밀번호 확인 요망")
+
+
+def _go_home(driver, wait, _st) -> None:
+    """현재 URL이 h5 홈이 아닌 경우 홈으로 이동 후 핵심 요소 대기."""
+    if PC_HOST in driver.current_url or "#/home" not in driver.current_url:
+        _st("h5 홈으로 이동 중...")
+        driver.get(HOME_URL)
+        try:
+            wait.until(EC.presence_of_element_located((By.XPATH,
+                f"//*[contains({_ci('text()')}, 'quickly buy')"
+                f" or contains({_ci('text()')}, 'safe and convenient')]"
+            )))
+        except TimeoutException:
+            pass  # 요소 미감지 시에도 계속 진행
+    _st("홈 접속 완료")
+
+
 def _check_submit_result(driver, _st, timeout: float = 5.0) -> None:
     """
     Confirm 클릭 후 결과 메시지를 폴링하여 성공/실패를 판별한다.
@@ -94,7 +156,6 @@ def _check_submit_result(driver, _st, timeout: float = 5.0) -> None:
         "success", "complete", "done", "submitted", "received", "ok",
     ]
 
-    # 토스트·알림·팝업 컨테이너 후보
     CONTAINER_XPATH = (
         "//*["
         "  contains(@class,'toast') or contains(@class,'alert') or"
@@ -146,58 +207,13 @@ def _do_submit(driver, code: str, login_url: str, email: str, password: str, _st
     """단일 사이트에서 코드 입력 전체 흐름."""
     wait = WebDriverWait(driver, TIMEOUT)
 
-    # ── Step 1: 로그인 페이지 접속 ────────────────────────────────
-    _st("로그인 페이지 접속 중...")
-    driver.get(login_url)
-    time.sleep(5)
+    # ── Step 1: 로그인 ────────────────────────────────────────────
+    _do_login(driver, wait, login_url, email, password, _st)
 
-    # ── Step 2: 노란색 Login 버튼 클릭 ───────────────────────────
-    _st("Login 버튼 클릭 중...")
-    try:
-        el = wait.until(EC.presence_of_element_located(
-            (By.XPATH, "//div[contains(@class,'login-btn')]")
-        ))
-        _js_click(driver, el)
-    except TimeoutException:
-        raise RuntimeError("요소를 찾을 수 없음: 노란색 Login 버튼")
-    time.sleep(3)
+    # ── Step 2: 홈 이동 ──────────────────────────────────────────
+    _go_home(driver, wait, _st)
 
-    # ── Step 3: 로그인 필요 시 이메일/비밀번호 입력 ───────────────
-    if "login" in driver.current_url.lower() or \
-            driver.current_url.rstrip("/") == login_url.rstrip("/"):
-        _st(f"로그인 필요 → {email} 로그인 중...")
-        try:
-            email_input = wait.until(EC.visibility_of_element_located((By.XPATH,
-                "//input[contains(@placeholder,'email') or contains(@placeholder,'Email')]"
-            )))
-            pw_input = driver.find_element(By.XPATH,
-                "//input[contains(@placeholder,'password') or contains(@placeholder,'Password')]"
-            )
-            if not email_input.get_attribute("value"):
-                email_input.clear()
-                email_input.send_keys(email)
-            if not pw_input.get_attribute("value"):
-                pw_input.clear()
-                pw_input.send_keys(password)
-            login_btn = wait.until(EC.presence_of_element_located(
-                (By.XPATH, "//div[contains(@class,'login-btn')]")
-            ))
-            _js_click(driver, login_btn)
-            _st("로그인 완료, 이동 대기...")
-            time.sleep(5)
-        except TimeoutException:
-            raise RuntimeError("로그인 입력창을 찾을 수 없음")
-    else:
-        _st("세션 유지됨 → 로그인 생략")
-
-    # ── Step 4: PC 버전이면 h5 홈으로 이동 ──────────────────────
-    if PC_HOST in driver.current_url or "#/home" not in driver.current_url:
-        _st("h5 홈으로 이동 중...")
-        driver.get(HOME_URL)
-        time.sleep(4)
-    _st("홈 접속 완료")
-
-    # ── Step 5: Quickly buy coin 클릭 ────────────────────────────
+    # ── Step 3: Quickly buy coin 클릭 ────────────────────────────
     _st("Quickly buy coin 클릭 중...")
     _click(driver, wait,
         xpath=(
@@ -212,17 +228,17 @@ def _do_submit(driver, code: str, login_url: str, email: str, password: str, _st
         ),
         label="Quickly buy coin 섹션",
     )
-    time.sleep(2)
+    time.sleep(1.5)
 
-    # ── Step 6: Invited me 클릭 ──────────────────────────────────
+    # ── Step 4: Invited me 클릭 ──────────────────────────────────
     _st("Invited me 클릭 중...")
     _click(driver, wait,
         xpath=f"//*[contains({_ci('text()')}, 'invited me')]",
         label="Invited me",
     )
-    time.sleep(2)
+    time.sleep(1.5)
 
-    # ── Step 7: 코드 입력 ────────────────────────────────────────
+    # ── Step 5: 코드 입력 ────────────────────────────────────────
     _st(f"코드 입력 중: {code}")
     try:
         inp = wait.until(EC.visibility_of_element_located((By.XPATH,
@@ -233,11 +249,11 @@ def _do_submit(driver, code: str, login_url: str, email: str, password: str, _st
         )))
         inp.clear()
         inp.send_keys(code)
-        time.sleep(1)
+        time.sleep(0.5)
     except TimeoutException:
         raise RuntimeError("코드 입력창을 찾을 수 없음")
 
-    # ── Step 8: confirm 클릭 ─────────────────────────────────────
+    # ── Step 6: confirm 클릭 ─────────────────────────────────────
     _st("Confirm 버튼 클릭 중...")
     _click(driver, wait,
         xpath=(
@@ -248,9 +264,9 @@ def _do_submit(driver, code: str, login_url: str, email: str, password: str, _st
         ),
         label="confirm 버튼",
     )
-    time.sleep(2)
+    time.sleep(1.5)
 
-    # ── Step 9: 결과 확인 ────────────────────────────────────────
+    # ── Step 7: 결과 확인 ────────────────────────────────────────
     _st("결과 확인 중...")
     _check_submit_result(driver, _st, timeout=5.0)
 
@@ -276,7 +292,6 @@ def submit_order_code(
         if status_cb:
             status_cb(msg)
 
-    # 리스트 정규화
     if isinstance(login_url, str):
         urls = [login_url] if login_url.strip() else [LOGIN_URL]
     else:
@@ -294,7 +309,7 @@ def submit_order_code(
         try:
             _do_submit(driver, code, url, email, password, _st)
             _st("자동 입력 완료!")
-            return  # 성공
+            return
         except Exception as e:
             last_error = e
             _st(f"✗ 사이트 {idx+1} 실패: {e}")
@@ -314,58 +329,13 @@ def _do_no_more(driver, login_url: str, email: str, password: str, _st) -> None:
     """No more → Done/OK 흐름 단일 사이트 실행."""
     wait = WebDriverWait(driver, TIMEOUT)
 
-    # ── Step 1: 로그인 페이지 접속 ────────────────────────────────
-    _st("로그인 페이지 접속 중...")
-    driver.get(login_url)
-    time.sleep(5)
+    # ── Step 1: 로그인 ────────────────────────────────────────────
+    _do_login(driver, wait, login_url, email, password, _st)
 
-    # ── Step 2: 노란색 Login 버튼 클릭 ───────────────────────────
-    _st("Login 버튼 클릭 중...")
-    try:
-        el = wait.until(EC.presence_of_element_located(
-            (By.XPATH, "//div[contains(@class,'login-btn')]")
-        ))
-        _js_click(driver, el)
-    except TimeoutException:
-        raise RuntimeError("요소를 찾을 수 없음: 노란색 Login 버튼")
-    time.sleep(3)
+    # ── Step 2: 홈 이동 ──────────────────────────────────────────
+    _go_home(driver, wait, _st)
 
-    # ── Step 3: 로그인 필요 시 이메일/비밀번호 입력 ───────────────
-    if "login" in driver.current_url.lower() or \
-            driver.current_url.rstrip("/") == login_url.rstrip("/"):
-        _st(f"로그인 필요 → {email} 로그인 중...")
-        try:
-            email_input = wait.until(EC.visibility_of_element_located((By.XPATH,
-                "//input[contains(@placeholder,'email') or contains(@placeholder,'Email')]"
-            )))
-            pw_input = driver.find_element(By.XPATH,
-                "//input[contains(@placeholder,'password') or contains(@placeholder,'Password')]"
-            )
-            if not email_input.get_attribute("value"):
-                email_input.clear()
-                email_input.send_keys(email)
-            if not pw_input.get_attribute("value"):
-                pw_input.clear()
-                pw_input.send_keys(password)
-            login_btn = wait.until(EC.presence_of_element_located(
-                (By.XPATH, "//div[contains(@class,'login-btn')]")
-            ))
-            _js_click(driver, login_btn)
-            _st("로그인 완료, 이동 대기...")
-            time.sleep(5)
-        except TimeoutException:
-            raise RuntimeError("로그인 입력창을 찾을 수 없음")
-    else:
-        _st("세션 유지됨 → 로그인 생략")
-
-    # ── Step 4: PC 버전이면 h5 홈으로 이동 ──────────────────────
-    if PC_HOST in driver.current_url or "#/home" not in driver.current_url:
-        _st("h5 홈으로 이동 중...")
-        driver.get(HOME_URL)
-        time.sleep(4)
-    _st("홈 접속 완료")
-
-    # ── Step 5: Quickly buy coin 클릭 ────────────────────────────
+    # ── Step 3: Quickly buy coin 클릭 ────────────────────────────
     _st("Quickly buy coin 클릭 중...")
     _click(driver, wait,
         xpath=(
@@ -380,25 +350,25 @@ def _do_no_more(driver, login_url: str, email: str, password: str, _st) -> None:
         ),
         label="Quickly buy coin 섹션",
     )
-    time.sleep(2)
+    time.sleep(1.5)
 
-    # ── Step 6: Invited me 클릭 ──────────────────────────────────
+    # ── Step 4: Invited me 클릭 ──────────────────────────────────
     _st("Invited me 클릭 중...")
     _click(driver, wait,
         xpath=f"//*[contains({_ci('text()')}, 'invited me')]",
         label="Invited me",
     )
-    time.sleep(2)
+    time.sleep(1.5)
 
-    # ── Step 7: No more 클릭 ─────────────────────────────────────
+    # ── Step 5: No more 클릭 ─────────────────────────────────────
     _st("No more 클릭 중...")
     _click(driver, wait,
         xpath=f"//*[contains({_ci('text()')}, 'no more')]",
         label="No more",
     )
-    time.sleep(2)
+    time.sleep(1.5)
 
-    # ── Step 8: Done / OK 클릭 ───────────────────────────────────
+    # ── Step 6: Done / OK 클릭 ───────────────────────────────────
     _st("Done/OK 클릭 중...")
     _click(driver, wait,
         xpath=(
@@ -409,7 +379,7 @@ def _do_no_more(driver, login_url: str, email: str, password: str, _st) -> None:
         ),
         label="Done/OK 버튼",
     )
-    time.sleep(2)
+    time.sleep(1.0)
     _st("완료!")
 
 
