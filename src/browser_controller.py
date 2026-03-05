@@ -159,35 +159,44 @@ def _do_login(driver, wait, login_url: str, email: str, password: str, _st,
 
     _chk(cancel_event)
 
-    # 로그인 버튼 클릭 — EC.element_to_be_clickable 대신 find_elements + JS click
+    # 로그인 버튼 클릭 — JavaScript DOM 탐색으로 버튼 클릭
     time.sleep(0.5)  # 버튼 렌더링 대기
-    clicked = False
-    _LOGIN_CANDIDATES = [
-        "//button[@type='submit']",
-        "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'login')]",
-        "//button[contains(.,'로그인')]",
-        "//div[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'login') and not(.//input) and not(.//button)]",
-        "//div[contains(.,'로그인') and not(.//input) and not(.//button)]",
-        "//span[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'login') and not(.//input)]",
-        "//a[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'login')]",
-    ]
-    for xpath in _LOGIN_CANDIDATES:
-        els = driver.find_elements(By.XPATH, xpath)
-        for el in els:
-            try:
-                if el.is_displayed():
-                    _js_click(driver, el)
-                    _st("로그인 버튼 클릭 완료")
-                    clicked = True
-                    break
-            except Exception:
-                pass
-        if clicked:
-            break
+    clicked = driver.execute_script("""
+        var keywords = ['login', '로그인', 'log in', 'sign in'];
+        var candidates = Array.from(document.querySelectorAll(
+            'button, input[type="submit"], [role="button"], div, span, a'
+        ));
+        for (var i = 0; i < candidates.length; i++) {
+            var el = candidates[i];
+            var rect = el.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) continue;
+            var text = (el.textContent || el.value || '').trim().toLowerCase();
+            var tag = el.tagName.toLowerCase();
+            var isSubmit = (el.type === 'submit') || (el.getAttribute('type') === 'submit');
+            var hasKeyword = keywords.some(function(k){ return text === k || text.includes(k); });
+            // div/span/a 는 input 자식이 없는 것만 (폼 컨테이너 제외)
+            if (tag === 'div' || tag === 'span' || tag === 'a') {
+                if (el.querySelector('input') || el.querySelector('button')) continue;
+            }
+            if (isSubmit || (hasKeyword && text.length < 20)) {
+                el.click();
+                return el.textContent.trim() || el.type;
+            }
+        }
+        return null;
+    """)
 
-    if not clicked:
-        pw_input.send_keys(Keys.RETURN)
-        _st("로그인 버튼 미발견 → Enter 제출")
+    if clicked:
+        _st(f"로그인 버튼 클릭 완료: '{clicked}'")
+    else:
+        # 폴백: form.submit()
+        try:
+            driver.execute_script("document.querySelector('form').submit();")
+            _st("form.submit() 폴백 실행")
+            clicked = True
+        except Exception:
+            pw_input.send_keys(Keys.RETURN)
+            _st("Enter 폴백 실행")
 
     _st("페이지 전환 대기...")
     try:
