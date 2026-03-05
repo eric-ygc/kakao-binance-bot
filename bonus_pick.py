@@ -910,6 +910,12 @@ class AccountManagerDialog(tk.Toplevel):
                    command=self._disable_all).pack(side=tk.LEFT, padx=3)
         ttk.Separator(btn_frame, orient=tk.VERTICAL).pack(
             side=tk.LEFT, fill=tk.Y, padx=8)
+        ttk.Button(btn_frame, text="엑셀 불러오기",
+                   command=self._import_excel).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="엑셀 저장",
+                   command=self._export_excel).pack(side=tk.LEFT, padx=3)
+        ttk.Separator(btn_frame, orient=tk.VERTICAL).pack(
+            side=tk.LEFT, fill=tk.Y, padx=8)
         ttk.Button(btn_frame, text="저장 후 닫기", style="Start.TButton",
                    command=self._save_close).pack(side=tk.LEFT, padx=3)
 
@@ -1001,6 +1007,116 @@ class AccountManagerDialog(tk.Toplevel):
         if dlg.result:
             self._accounts[idx] = dlg.result
             self._refresh_list()
+
+    def _import_excel(self) -> None:
+        path = filedialog.askopenfilename(
+            filetypes=[("Excel 파일", "*.xlsx *.xls"), ("모든 파일", "*.*")],
+            title="계정 목록 엑셀 파일 선택",
+            parent=self,
+        )
+        if not path:
+            return
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+            ws = wb.active
+            rows = list(ws.iter_rows(values_only=True))
+            wb.close()
+        except Exception as e:
+            messagebox.showerror("불러오기 실패", str(e), parent=self)
+            return
+
+        if not rows:
+            messagebox.showwarning("내용 없음", "엑셀 파일이 비어 있습니다.", parent=self)
+            return
+
+        # 헤더 행 스킵 (첫 셀이 '이메일' 또는 'email'이면 헤더로 판단)
+        start = 0
+        first = str(rows[0][0] or "").strip().lower()
+        if first in ("이메일", "email", "e-mail"):
+            start = 1
+
+        new_accounts = []
+        skipped = 0
+        for row in rows[start:]:
+            if not row or not row[0]:
+                continue
+            email = str(row[0]).strip()
+            if not email:
+                continue
+            pw    = str(row[1]).strip() if len(row) > 1 and row[1] is not None else ""
+            memo  = str(row[2]).strip() if len(row) > 2 and row[2] is not None else ""
+            enabled_raw = str(row[3]).strip().lower() if len(row) > 3 and row[3] is not None else "true"
+            enabled = enabled_raw not in ("false", "x", "✕", "0", "n", "no", "미사용")
+            new_accounts.append({"email": email, "password": pw,
+                                  "memo": memo, "enabled": enabled})
+
+        if not new_accounts:
+            messagebox.showwarning("계정 없음", "불러올 계정이 없습니다.", parent=self)
+            return
+
+        mode = messagebox.askyesnocancel(
+            "불러오기 방식",
+            f"엑셀에서 계정 {len(new_accounts)}개를 찾았습니다.\n\n"
+            "[예] 기존 목록에 추가\n"
+            "[아니오] 기존 목록을 대체\n"
+            "[취소] 취소",
+            parent=self,
+        )
+        if mode is None:
+            return
+        if mode:
+            self._accounts.extend(new_accounts)
+        else:
+            self._accounts = new_accounts
+            self._current_idx = 0
+        self._refresh_list()
+        messagebox.showinfo("완료", f"계정 {len(new_accounts)}개를 불러왔습니다.", parent=self)
+
+    def _export_excel(self) -> None:
+        if not self._accounts:
+            messagebox.showwarning("계정 없음", "내보낼 계정이 없습니다.", parent=self)
+            return
+        now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel 파일", "*.xlsx"), ("모든 파일", "*.*")],
+            initialfile=f"보너스픽_계정_{now_str}.xlsx",
+            title="계정 목록 저장",
+            parent=self,
+        )
+        if not path:
+            return
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "계정목록"
+
+            headers = ["이메일", "비밀번호", "비고", "사용여부"]
+            header_fill = PatternFill("solid", fgColor="2D6A2D")
+            for col, h in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col, value=h)
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal="center")
+
+            for r, acct in enumerate(self._accounts, 2):
+                ws.cell(row=r, column=1, value=acct.get("email", ""))
+                ws.cell(row=r, column=2, value=acct.get("password", ""))
+                ws.cell(row=r, column=3, value=acct.get("memo", ""))
+                ws.cell(row=r, column=4, value="사용" if acct.get("enabled", True) else "미사용")
+
+            ws.column_dimensions["A"].width = 32
+            ws.column_dimensions["B"].width = 20
+            ws.column_dimensions["C"].width = 20
+            ws.column_dimensions["D"].width = 10
+            wb.save(path)
+        except Exception as e:
+            messagebox.showerror("저장 실패", str(e), parent=self)
+            return
+        messagebox.showinfo("완료", f"계정 {len(self._accounts)}개를 저장했습니다.\n{path}", parent=self)
 
     def _save_close(self) -> None:
         self._on_save(self._accounts, self._current_idx)
