@@ -54,29 +54,33 @@ STEPS = [
 ]
 
 # ---------------------------------------------------------------------------
-# 색상 팔레트
+# Neumorphism 색상 팔레트
 # ---------------------------------------------------------------------------
+NEU_BG    = "#e0e5ec"
+NEU_LIGHT = "#ffffff"
+NEU_DARK  = "#a3b1c6"
+
 C = {
-    "bg":        "#1e1e1e",
-    "panel":     "#252526",
-    "panel2":    "#2d2d30",
-    "input":     "#3c3c3c",
-    "border":    "#454545",
-    "fg":        "#cccccc",
-    "fg_dim":    "#888888",
-    "fg_bright": "#e8e8e8",
-    "accent":    "#4ec9b0",
-    "yellow":    "#f0c040",
-    "code_bg":   "#0d1117",
-    "log_bg":    "#1a1a1a",
-    "start":     "#2d6a2d",
-    "start_hl":  "#3d8a3d",
-    "stop":      "#7a1f1f",
-    "stop_hl":   "#9a2f2f",
-    "sel":       "#094771",
-    "error":     "#f44747",
-    "ok":        "#4ec9b0",
-    "system":    "#6a9955",
+    "bg":        NEU_BG,
+    "panel":     NEU_BG,
+    "panel2":    "#d1d9e6",
+    "input":     "#d1d9e6",
+    "border":    NEU_DARK,
+    "fg":        "#31344b",
+    "fg_dim":    "#9baacf",
+    "fg_bright": "#1a1d2e",
+    "accent":    "#5b86e5",
+    "yellow":    "#c87800",
+    "code_bg":   "#d1d9e6",
+    "log_bg":    "#d1d9e6",
+    "start":     "#2e7d57",
+    "start_hl":  "#3a9b6b",
+    "stop":      "#b83232",
+    "stop_hl":   "#d43c3c",
+    "sel":       "#b8c4d6",
+    "error":     "#c0392b",
+    "ok":        "#27a06a",
+    "system":    "#7f8c9a",
 }
 
 # ---------------------------------------------------------------------------
@@ -146,14 +150,18 @@ class BonusPickApp(tk.Tk):
         s.theme_use("clam")
         s.configure(".",
             background=C["bg"], foreground=C["fg"],
-            fieldbackground=C["input"], bordercolor=C["border"],
-            darkcolor=C["panel"], lightcolor=C["panel"],
-            troughcolor=C["panel"],
-            selectbackground=C["sel"], selectforeground="#ffffff",
+            fieldbackground=C["input"], bordercolor=C["bg"],
+            darkcolor=NEU_DARK, lightcolor=NEU_LIGHT,
+            troughcolor=C["input"],
+            selectbackground=C["sel"], selectforeground=C["fg_bright"],
             insertcolor=C["fg"], relief="flat",
         )
         s.configure("TFrame", background=C["bg"])
         s.configure("Panel.TFrame", background=C["panel"])
+        s.configure("Card.TFrame",
+            background=C["bg"], relief="raised", borderwidth=5,
+            lightcolor=NEU_LIGHT, darkcolor=NEU_DARK,
+        )
         s.configure("TLabel",
             background=C["bg"], foreground=C["fg"], font=("Segoe UI", 9))
         s.configure("Panel.TLabel",
@@ -161,92 +169,100 @@ class BonusPickApp(tk.Tk):
         s.configure("Dim.TLabel",
             background=C["panel"], foreground=C["fg_dim"], font=("Segoe UI", 8))
         s.configure("TLabelframe",
-            background=C["panel"], bordercolor=C["border"],
-            darkcolor=C["panel"], lightcolor=C["panel"], relief="groove",
+            background=C["bg"], bordercolor=NEU_DARK,
+            darkcolor=NEU_DARK, lightcolor=NEU_LIGHT, relief="raised", borderwidth=4,
         )
         s.configure("TLabelframe.Label",
-            background=C["panel"], foreground=C["accent"],
+            background=C["bg"], foreground=C["accent"],
             font=("Segoe UI", 9, "bold"),
         )
         s.configure("TEntry",
-            fieldbackground=C["input"], foreground=C["fg_bright"],
-            bordercolor=C["border"], insertcolor=C["fg"], padding=(4, 3),
+            fieldbackground=C["input"], foreground=C["fg"],
+            bordercolor=NEU_DARK, lightcolor=NEU_DARK, darkcolor=NEU_LIGHT,
+            insertcolor=C["fg"], relief="sunken", borderwidth=3, padding=(4, 3),
         )
         s.map("TEntry",
             fieldbackground=[("readonly", C["panel"])],
-            bordercolor=[("focus", C["accent"])],
+            lightcolor=[("focus", C["accent"])],
+            darkcolor=[("focus", NEU_LIGHT)],
         )
         s.configure("TCheckbutton",
-            background=C["panel"], foreground=C["fg"],
-            focuscolor=C["panel"], font=("Segoe UI", 9),
+            background=C["bg"], foreground=C["fg"],
+            focuscolor=C["bg"], font=("Segoe UI", 9),
         )
         s.map("TCheckbutton",
-            background=[("active", C["panel"])],
+            background=[("active", C["bg"])],
             foreground=[("active", C["fg_bright"])],
         )
         s.configure("TButton",
-            background=C["panel2"], foreground=C["fg"],
-            bordercolor=C["border"], darkcolor=C["panel2"], lightcolor=C["panel2"],
-            padding=(10, 5), font=("Segoe UI", 9), relief="flat",
+            background=C["bg"], foreground=C["fg"],
+            bordercolor=C["bg"], darkcolor=NEU_DARK, lightcolor=NEU_LIGHT,
+            relief="raised", borderwidth=4, padding=(10, 5), font=("Segoe UI", 9),
         )
         s.map("TButton",
-            background=[("active", "#3f3f3f"), ("pressed", "#1a1a1a")],
+            relief=[("pressed", "sunken")],
+            darkcolor=[("pressed", NEU_LIGHT), ("active", NEU_DARK)],
+            lightcolor=[("pressed", NEU_DARK), ("active", NEU_LIGHT)],
             foreground=[("active", C["fg_bright"])],
-            bordercolor=[("active", C["accent"])],
         )
         s.configure("Start.TButton",
             background=C["start"], foreground="#ffffff",
-            darkcolor=C["start"], lightcolor=C["start"],
-            font=("Segoe UI", 10, "bold"),
+            darkcolor="#1d5238", lightcolor="#52b88a",
+            relief="raised", borderwidth=4, font=("Segoe UI", 10, "bold"),
         )
         s.map("Start.TButton",
-            background=[("active", C["start_hl"]), ("pressed", "#1d4a1d")],
+            relief=[("pressed", "sunken")],
+            darkcolor=[("pressed", "#52b88a")],
+            lightcolor=[("pressed", "#1d5238")],
+            background=[("active", C["start_hl"]), ("pressed", C["start"])],
         )
         s.configure("Stop.TButton",
             background=C["stop"], foreground="#ffffff",
-            darkcolor=C["stop"], lightcolor=C["stop"],
-            font=("Segoe UI", 9, "bold"),
+            darkcolor="#7a1f1f", lightcolor="#e87070",
+            relief="raised", borderwidth=4, font=("Segoe UI", 9, "bold"),
         )
         s.map("Stop.TButton",
-            background=[("active", C["stop_hl"]), ("pressed", "#4b1010")],
+            relief=[("pressed", "sunken")],
+            darkcolor=[("pressed", "#e87070")],
+            lightcolor=[("pressed", "#7a1f1f")],
+            background=[("active", C["stop_hl"]), ("pressed", C["stop"])],
         )
         s.configure("TScrollbar",
-            background=C["panel2"], troughcolor=C["panel"],
-            bordercolor=C["border"], darkcolor=C["panel"], lightcolor=C["panel"],
-            arrowcolor=C["fg_dim"], relief="flat",
+            background=C["bg"], troughcolor=C["input"],
+            bordercolor=C["bg"], darkcolor=NEU_DARK, lightcolor=NEU_LIGHT,
+            arrowcolor=C["fg_dim"], relief="raised", borderwidth=2,
         )
-        s.map("TScrollbar", background=[("active", "#505050")])
-        s.configure("TSeparator", background=C["border"])
+        s.map("TScrollbar", background=[("active", C["panel2"])])
+        s.configure("TSeparator", background=NEU_DARK)
         s.configure("Treeview",
-            background="#2d2d2d", foreground=C["fg"],
-            fieldbackground="#2d2d2d", bordercolor=C["border"],
+            background=C["input"], foreground=C["fg"],
+            fieldbackground=C["input"], bordercolor=NEU_DARK,
             rowheight=26, font=("Segoe UI", 9),
         )
         s.configure("Treeview.Heading",
-            background="#333333", foreground="#aaaaaa",
-            bordercolor=C["border"], darkcolor="#333333", lightcolor="#333333",
-            font=("Segoe UI", 9, "bold"), relief="flat",
+            background=C["bg"], foreground=C["fg_dim"],
+            bordercolor=NEU_DARK, darkcolor=NEU_DARK, lightcolor=NEU_LIGHT,
+            font=("Segoe UI", 9, "bold"), relief="raised", borderwidth=2,
         )
         s.map("Treeview",
             background=[("selected", C["sel"])],
-            foreground=[("selected", "#ffffff")],
+            foreground=[("selected", C["fg_bright"])],
         )
-        s.map("Treeview.Heading", background=[("active", "#3d3d3d")])
+        s.map("Treeview.Heading", background=[("active", C["panel2"])])
 
     # ------------------------------------------------------------------
     # Bento 카드 헬퍼
     # ------------------------------------------------------------------
 
     def _make_card(self, parent: tk.Widget, title: str = "") -> tk.Frame:
-        outer = tk.Frame(parent, bg=C["border"])
-        inner = tk.Frame(outer, bg=C["panel"])
-        inner.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
-        pad = tk.Frame(inner, bg=C["panel"])
-        pad.pack(fill=tk.BOTH, expand=True, padx=14, pady=10)
+        outer = ttk.Frame(parent, style="Card.TFrame", padding=3)
+        pad = tk.Frame(outer, bg=C["bg"])
+        pad.pack(fill=tk.BOTH, expand=True, padx=12, pady=10)
         if title:
-            tk.Label(pad, text=title, bg=C["panel"], fg=C["accent"],
-                     font=("Segoe UI", 8, "bold")).pack(anchor=tk.W, pady=(0, 7))
-            body = tk.Frame(pad, bg=C["panel"])
+            tk.Label(pad, text=title.upper(),
+                     bg=C["bg"], fg=C["fg_dim"],
+                     font=("Segoe UI", 7, "bold")).pack(anchor=tk.W, pady=(0, 8))
+            body = tk.Frame(pad, bg=C["bg"])
             body.pack(fill=tk.BOTH, expand=True)
         else:
             body = pad

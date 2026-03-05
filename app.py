@@ -54,29 +54,33 @@ CODE_PATTERN = re.compile(r'^[A-Za-z0-9]{9}$')
 logger = setup_logger("app")
 
 # ---------------------------------------------------------------------------
-# 다크 테마 색상 팔레트
+# Neumorphism 색상 팔레트
 # ---------------------------------------------------------------------------
+NEU_BG    = "#e0e5ec"   # neumorphic base
+NEU_LIGHT = "#ffffff"   # highlight shadow (top-left)
+NEU_DARK  = "#a3b1c6"   # dark shadow (bottom-right)
+
 C = {
-    "bg":          "#1e1e1e",   # 메인 배경
-    "panel":       "#252526",   # LabelFrame 내부
-    "panel2":      "#2d2d30",   # 버튼·입력 배경
-    "input":       "#3c3c3c",   # Entry 배경
-    "border":      "#454545",   # 테두리
-    "fg":          "#cccccc",   # 일반 텍스트
-    "fg_dim":      "#888888",   # 보조 텍스트
-    "fg_bright":   "#e8e8e8",   # 강조 텍스트
-    "accent":      "#4ec9b0",   # 청록 강조
-    "yellow":      "#f0c040",   # 코드 색상
-    "code_bg":     "#0d1117",   # 코드 패널 배경
-    "log_bg":      "#1a1a1a",   # 로그 배경
-    "start":       "#2d6a2d",   # 시작 버튼
-    "start_hl":    "#3d8a3d",
-    "stop":        "#7a1f1f",   # 중지 버튼
-    "stop_hl":     "#9a2f2f",
-    "sel":         "#094771",   # 선택 색상
-    "error":       "#f44747",
-    "ok":          "#4ec9b0",
-    "system":      "#6a9955",
+    "bg":          NEU_BG,       # 메인 배경
+    "panel":       NEU_BG,       # 카드 내부
+    "panel2":      "#d1d9e6",    # 서브 배경 (상태바 등)
+    "input":       "#d1d9e6",    # Entry 배경 (sunken)
+    "border":      NEU_DARK,     # 구분선
+    "fg":          "#31344b",    # 일반 텍스트
+    "fg_dim":      "#9baacf",    # 보조 텍스트
+    "fg_bright":   "#1a1d2e",    # 강조 텍스트
+    "accent":      "#5b86e5",    # 블루 강조
+    "yellow":      "#c87800",    # 코드 색상 (앰버)
+    "code_bg":     "#d1d9e6",    # 코드 패널 배경
+    "log_bg":      "#d1d9e6",    # 로그 배경
+    "start":       "#2e7d57",    # 시작 버튼 (그린)
+    "start_hl":    "#3a9b6b",
+    "stop":        "#b83232",    # 중지 버튼 (레드)
+    "stop_hl":     "#d43c3c",
+    "sel":         "#b8c4d6",    # 선택 색상
+    "error":       "#c0392b",
+    "ok":          "#27a06a",
+    "system":      "#7f8c9a",
 }
 
 
@@ -153,12 +157,12 @@ class App(tk.Tk):
             background=C["bg"],
             foreground=C["fg"],
             fieldbackground=C["input"],
-            bordercolor=C["border"],
-            darkcolor=C["panel"],
-            lightcolor=C["panel"],
-            troughcolor=C["panel"],
+            bordercolor=C["bg"],
+            darkcolor=NEU_DARK,
+            lightcolor=NEU_LIGHT,
+            troughcolor=C["input"],
             selectbackground=C["sel"],
-            selectforeground="#ffffff",
+            selectforeground=C["fg_bright"],
             insertcolor=C["fg"],
             relief="flat",
         )
@@ -166,6 +170,13 @@ class App(tk.Tk):
         # Frame
         s.configure("TFrame", background=C["bg"])
         s.configure("Panel.TFrame", background=C["panel"])
+        s.configure("Card.TFrame",
+            background=C["bg"],
+            relief="raised",
+            borderwidth=5,
+            lightcolor=NEU_LIGHT,
+            darkcolor=NEU_DARK,
+        )
 
         # Label
         s.configure("TLabel", background=C["bg"], foreground=C["fg"],
@@ -177,125 +188,145 @@ class App(tk.Tk):
 
         # LabelFrame
         s.configure("TLabelframe",
-            background=C["panel"],
-            bordercolor=C["border"],
-            darkcolor=C["panel"],
-            lightcolor=C["panel"],
-            relief="groove",
+            background=C["bg"],
+            bordercolor=NEU_DARK,
+            darkcolor=NEU_DARK,
+            lightcolor=NEU_LIGHT,
+            relief="raised",
+            borderwidth=4,
         )
         s.configure("TLabelframe.Label",
-            background=C["panel"],
+            background=C["bg"],
             foreground=C["accent"],
             font=("Segoe UI", 9, "bold"),
         )
 
-        # Entry
+        # Entry (sunken — 눌린 느낌)
         s.configure("TEntry",
             fieldbackground=C["input"],
-            foreground=C["fg_bright"],
-            bordercolor=C["border"],
+            foreground=C["fg"],
+            bordercolor=NEU_DARK,
+            lightcolor=NEU_DARK,
+            darkcolor=NEU_LIGHT,
             insertcolor=C["fg"],
+            relief="sunken",
+            borderwidth=3,
             padding=(4, 3),
         )
         s.map("TEntry",
             fieldbackground=[("readonly", C["panel"])],
-            bordercolor=[("focus", C["accent"])],
+            lightcolor=[("focus", C["accent"])],
+            darkcolor=[("focus", NEU_LIGHT)],
         )
 
         # Checkbutton
         s.configure("TCheckbutton",
-            background=C["panel"],
+            background=C["bg"],
             foreground=C["fg"],
-            focuscolor=C["panel"],
+            focuscolor=C["bg"],
             font=("Segoe UI", 9),
         )
         s.map("TCheckbutton",
-            background=[("active", C["panel"])],
+            background=[("active", C["bg"])],
             foreground=[("active", C["fg_bright"])],
         )
 
-        # Button (기본)
+        # Button (기본 neumorphic — raised → sunken on press)
         s.configure("TButton",
-            background=C["panel2"],
+            background=C["bg"],
             foreground=C["fg"],
-            bordercolor=C["border"],
-            darkcolor=C["panel2"],
-            lightcolor=C["panel2"],
+            bordercolor=C["bg"],
+            darkcolor=NEU_DARK,
+            lightcolor=NEU_LIGHT,
+            relief="raised",
+            borderwidth=4,
             padding=(10, 5),
             font=("Segoe UI", 9),
-            relief="flat",
         )
         s.map("TButton",
-            background=[("active", "#3f3f3f"), ("pressed", "#1a1a1a")],
+            relief=[("pressed", "sunken")],
+            darkcolor=[("pressed", NEU_LIGHT), ("active", NEU_DARK)],
+            lightcolor=[("pressed", NEU_DARK), ("active", NEU_LIGHT)],
             foreground=[("active", C["fg_bright"])],
-            bordercolor=[("active", C["accent"])],
         )
 
-        # 시작 버튼 (초록)
+        # 시작 버튼 (초록 neumorphic)
         s.configure("Start.TButton",
             background=C["start"],
             foreground="#ffffff",
-            darkcolor=C["start"],
-            lightcolor=C["start"],
+            darkcolor="#1d5238",
+            lightcolor="#52b88a",
+            relief="raised",
+            borderwidth=4,
             font=("Segoe UI", 9, "bold"),
         )
         s.map("Start.TButton",
-            background=[("active", C["start_hl"]), ("pressed", "#1d4a1d")],
+            relief=[("pressed", "sunken")],
+            darkcolor=[("pressed", "#52b88a")],
+            lightcolor=[("pressed", "#1d5238")],
+            background=[("active", C["start_hl"]), ("pressed", C["start"])],
         )
 
-        # 중지 버튼 (빨강)
+        # 중지 버튼 (빨강 neumorphic)
         s.configure("Stop.TButton",
             background=C["stop"],
             foreground="#ffffff",
-            darkcolor=C["stop"],
-            lightcolor=C["stop"],
+            darkcolor="#7a1f1f",
+            lightcolor="#e87070",
+            relief="raised",
+            borderwidth=4,
             font=("Segoe UI", 9, "bold"),
         )
         s.map("Stop.TButton",
-            background=[("active", C["stop_hl"]), ("pressed", "#4b1010")],
+            relief=[("pressed", "sunken")],
+            darkcolor=[("pressed", "#e87070")],
+            lightcolor=[("pressed", "#7a1f1f")],
+            background=[("active", C["stop_hl"]), ("pressed", C["stop"])],
         )
 
         # Scrollbar
         s.configure("TScrollbar",
-            background=C["panel2"],
-            troughcolor=C["panel"],
-            bordercolor=C["border"],
-            darkcolor=C["panel"],
-            lightcolor=C["panel"],
+            background=C["bg"],
+            troughcolor=C["input"],
+            bordercolor=C["bg"],
+            darkcolor=NEU_DARK,
+            lightcolor=NEU_LIGHT,
             arrowcolor=C["fg_dim"],
-            relief="flat",
+            relief="raised",
+            borderwidth=2,
         )
         s.map("TScrollbar",
-            background=[("active", "#505050")],
+            background=[("active", C["panel2"])],
         )
 
         # Separator
-        s.configure("TSeparator", background=C["border"])
+        s.configure("TSeparator", background=NEU_DARK)
 
         # Treeview
         s.configure("Treeview",
-            background="#2d2d2d",
+            background=C["input"],
             foreground=C["fg"],
-            fieldbackground="#2d2d2d",
-            bordercolor=C["border"],
+            fieldbackground=C["input"],
+            bordercolor=NEU_DARK,
             rowheight=26,
             font=("Segoe UI", 9),
         )
         s.configure("Treeview.Heading",
-            background="#333333",
-            foreground="#aaaaaa",
-            bordercolor=C["border"],
-            darkcolor="#333333",
-            lightcolor="#333333",
+            background=C["bg"],
+            foreground=C["fg_dim"],
+            bordercolor=NEU_DARK,
+            darkcolor=NEU_DARK,
+            lightcolor=NEU_LIGHT,
             font=("Segoe UI", 9, "bold"),
-            relief="flat",
+            relief="raised",
+            borderwidth=2,
         )
         s.map("Treeview",
             background=[("selected", C["sel"])],
-            foreground=[("selected", "#ffffff")],
+            foreground=[("selected", C["fg_bright"])],
         )
         s.map("Treeview.Heading",
-            background=[("active", "#3d3d3d")],
+            background=[("active", C["panel2"])],
         )
 
     # ------------------------------------------------------------------
@@ -308,23 +339,17 @@ class App(tk.Tk):
 
     def _make_card(self, parent: tk.Widget, title: str = "") -> tk.Frame:
         """
-        Bento Grid 카드 생성.
-        outer(border) > inner(panel) > pad(패딩) 구조.
-        타이틀이 있으면 pad 안에 label(pack) + body(pack) 로 분리하여
-        body 안에서 grid/pack 을 자유롭게 사용할 수 있도록 한다.
+        Neumorphic 카드: Card.TFrame (raised, NEU_LIGHT/NEU_DARK) → pad → body.
         반환값(body)의 ._outer 속성으로 외부에서 grid 배치.
         """
-        outer = tk.Frame(parent, bg=C["border"])
-        inner = tk.Frame(outer, bg=C["panel"])
-        inner.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
-        pad = tk.Frame(inner, bg=C["panel"])
-        pad.pack(fill=tk.BOTH, expand=True, padx=14, pady=10)
+        outer = ttk.Frame(parent, style="Card.TFrame", padding=3)
+        pad = tk.Frame(outer, bg=C["bg"])
+        pad.pack(fill=tk.BOTH, expand=True, padx=12, pady=10)
         if title:
-            # 타이틀 라벨 (pack) 과 body (pack) 를 분리 → grid/pack 혼용 방지
-            tk.Label(pad, text=title,
-                     bg=C["panel"], fg=C["accent"],
-                     font=("Segoe UI", 8, "bold")).pack(anchor=tk.W, pady=(0, 7))
-            body = tk.Frame(pad, bg=C["panel"])
+            tk.Label(pad, text=title.upper(),
+                     bg=C["bg"], fg=C["fg_dim"],
+                     font=("Segoe UI", 7, "bold")).pack(anchor=tk.W, pady=(0, 8))
+            body = tk.Frame(pad, bg=C["bg"])
             body.pack(fill=tk.BOTH, expand=True)
         else:
             body = pad
@@ -585,8 +610,8 @@ class App(tk.Tk):
         self._log.grid(row=0, column=0, sticky="nsew")
 
         self._log.tag_configure("date_time",   foreground=C["fg_dim"])
-        self._log.tag_configure("timestamp",   foreground="#569cd6")
-        self._log.tag_configure("sender",      foreground=C["accent"],
+        self._log.tag_configure("timestamp",   foreground="#2471a3")
+        self._log.tag_configure("sender",      foreground="#1a7a5e",
                                 font=("Consolas", 10, "bold"))
         self._log.tag_configure("system",      foreground=C["system"],
                                 font=("Consolas", 10, "italic"))
