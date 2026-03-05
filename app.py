@@ -41,7 +41,7 @@ DEFAULT_CONFIG = {
     "watch_sender": "",
     "auto_input": False,
     "chrome_port": 9222,
-    "site_urls": ["https://dsj44.com/h5/#/login", "", "", "", ""],
+    "site_urls": ["https://dsj44.com/h5/#/login", "", "", "", "", "", "", "", "", ""],
     "accounts": [],
     "account_index": 0,
     "monitor_schedules": [
@@ -511,12 +511,12 @@ class App(tk.Tk):
         # 사이트 URL — 5개를 2열 배치
         saved_urls = cfg.get("site_urls", DEFAULT_CONFIG["site_urls"])
         if isinstance(saved_urls, str):
-            saved_urls = [saved_urls, "", "", "", ""]
-        while len(saved_urls) < 5:
+            saved_urls = [saved_urls] + [""] * 9
+        while len(saved_urls) < 10:
             saved_urls.append("")
-        self._site_url_vars = [tk.StringVar(value=saved_urls[i]) for i in range(5)]
+        self._site_url_vars = [tk.StringVar(value=saved_urls[i]) for i in range(10)]
 
-        for pr, (li, ri) in enumerate([(0, 1), (2, 3)], start=1):
+        for pr, (li, ri) in enumerate([(0,1),(2,3),(4,5),(6,7),(8,9)], start=1):
             ttk.Label(cd, text=f"사이트 {li+1}", style="Panel.TLabel").grid(
                 row=pr, column=0, sticky=tk.W, pady=2)
             ttk.Entry(cd, textvariable=self._site_url_vars[li]).grid(
@@ -526,30 +526,28 @@ class App(tk.Tk):
             ttk.Entry(cd, textvariable=self._site_url_vars[ri]).grid(
                 row=pr, column=3, sticky=tk.EW, padx=(6, 0), pady=2)
 
-        # 사이트 5  +  Chrome 포트
-        ttk.Label(cd, text="사이트 5", style="Panel.TLabel").grid(
-            row=3, column=0, sticky=tk.W, pady=2)
-        ttk.Entry(cd, textvariable=self._site_url_vars[4]).grid(
-            row=3, column=1, sticky=tk.EW, padx=(6, 14), pady=2)
+        # Chrome 포트 + 접속 테스트
         ttk.Label(cd, text="Chrome 포트", style="Panel.TLabel").grid(
-            row=3, column=2, sticky=tk.W, pady=2)
+            row=6, column=0, sticky=tk.W, pady=(6, 2))
         pf = ttk.Frame(cd, style="Panel.TFrame")
-        pf.grid(row=3, column=3, sticky=tk.W, padx=(6, 0), pady=2)
+        pf.grid(row=6, column=1, sticky=tk.W, padx=(6, 14), pady=(6, 2))
         self._port_var = tk.StringVar(value=str(cfg.get("chrome_port", 9222)))
         ttk.Entry(pf, textvariable=self._port_var, width=7).pack(side=tk.LEFT)
         ttk.Label(pf, text="  기본 9222", style="Dim.TLabel").pack(side=tk.LEFT)
+        ttk.Button(cd, text="접속 테스트", command=self._test_connections).grid(
+            row=6, column=2, columnspan=2, sticky=tk.EW, padx=(6, 0), pady=(6, 2))
 
         # 현재 계정
         ttk.Label(cd, text="현재 계정", style="Panel.TLabel").grid(
-            row=4, column=0, sticky=tk.W, pady=(8, 2))
+            row=7, column=0, sticky=tk.W, pady=(8, 2))
         self._current_acct_var = tk.StringVar()
         ttk.Label(cd, textvariable=self._current_acct_var,
                   style="Panel.TLabel",
                   foreground=C["accent"]).grid(
-            row=4, column=1, columnspan=2, sticky=tk.W, padx=(6, 0), pady=(8, 2))
+            row=7, column=1, columnspan=2, sticky=tk.W, padx=(6, 0), pady=(8, 2))
         ttk.Button(cd, text="계정 관리",
                    command=self._open_account_manager).grid(
-            row=4, column=3, sticky=tk.E, pady=(8, 2))
+            row=7, column=3, sticky=tk.E, pady=(8, 2))
         self._update_current_acct_label()
 
         # ╔══════════════════════════════════════╗
@@ -632,6 +630,28 @@ class App(tk.Tk):
             total = len(self._accounts)
             self._current_acct_var.set(
                 f"총 {total}개 계정 등록 | 활성 {len(enabled)}개")
+
+    def _test_connections(self) -> None:
+        """입력된 사이트 URL 접속 가능 여부를 백그라운드 스레드에서 테스트."""
+        import urllib.request
+        urls = [v.get().strip() for v in self._site_url_vars if v.get().strip()]
+        if not urls:
+            messagebox.showinfo("접속 테스트", "입력된 사이트 URL이 없습니다.")
+            return
+
+        def _run():
+            lines = []
+            for url in urls:
+                try:
+                    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(req, timeout=8):
+                        lines.append(f"✓  {url}")
+                except Exception as e:
+                    lines.append(f"✗  {url}\n     {e}")
+            self.after(0, lambda m="\n\n".join(lines): messagebox.showinfo("접속 테스트 결과", m))
+
+        messagebox.showinfo("접속 테스트", f"{len(urls)}개 사이트 접속 테스트 중...\n완료되면 결과 팝업이 표시됩니다.")
+        threading.Thread(target=_run, daemon=True).start()
 
     def _open_account_manager(self) -> None:
         def on_save(accounts, current_idx):

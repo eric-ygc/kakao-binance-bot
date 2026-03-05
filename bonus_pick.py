@@ -33,7 +33,7 @@ CONFIG_PATH   = BASE_DIR / "bonus_config.json"
 LOG_DATA_PATH = BASE_DIR / "bonus_log_data.json"
 
 DEFAULT_CONFIG = {
-    "site_urls":        ["https://dsj44.com/h5/#/login", "", "", "", ""],
+    "site_urls":        ["https://dsj44.com/h5/#/login", "", "", "", "", "", "", "", "", ""],
     "chrome_port":      9222,
     "accounts":         [],
     "account_index":    0,
@@ -352,12 +352,12 @@ class BonusPickApp(tk.Tk):
 
         saved_urls = cfg.get("site_urls", DEFAULT_CONFIG["site_urls"])
         if isinstance(saved_urls, str):
-            saved_urls = [saved_urls, "", "", "", ""]
-        while len(saved_urls) < 5:
+            saved_urls = [saved_urls] + [""] * 9
+        while len(saved_urls) < 10:
             saved_urls.append("")
-        self._site_url_vars = [tk.StringVar(value=saved_urls[i]) for i in range(5)]
+        self._site_url_vars = [tk.StringVar(value=saved_urls[i]) for i in range(10)]
 
-        for pr, (li, ri) in enumerate([(0, 1), (2, 3)], start=1):
+        for pr, (li, ri) in enumerate([(0,1),(2,3),(4,5),(6,7),(8,9)], start=1):
             ttk.Label(cb, text=f"사이트 {li+1}", style="Panel.TLabel").grid(
                 row=pr, column=0, sticky=tk.W, pady=2)
             ttk.Entry(cb, textvariable=self._site_url_vars[li]).grid(
@@ -367,17 +367,16 @@ class BonusPickApp(tk.Tk):
             ttk.Entry(cb, textvariable=self._site_url_vars[ri]).grid(
                 row=pr, column=3, sticky=tk.EW, padx=(6, 0), pady=2)
 
-        ttk.Label(cb, text="사이트 5", style="Panel.TLabel").grid(
-            row=3, column=0, sticky=tk.W, pady=2)
-        ttk.Entry(cb, textvariable=self._site_url_vars[4]).grid(
-            row=3, column=1, sticky=tk.EW, padx=(6, 14), pady=2)
+        # Chrome 포트 + 접속 테스트
         ttk.Label(cb, text="Chrome 포트", style="Panel.TLabel").grid(
-            row=3, column=2, sticky=tk.W, pady=2)
+            row=6, column=0, sticky=tk.W, pady=(6, 2))
         pf = ttk.Frame(cb, style="Panel.TFrame")
-        pf.grid(row=3, column=3, sticky=tk.W, padx=(6, 0), pady=2)
+        pf.grid(row=6, column=1, sticky=tk.W, padx=(6, 14), pady=(6, 2))
         self._port_var = tk.StringVar(value=str(cfg.get("chrome_port", 9222)))
         ttk.Entry(pf, textvariable=self._port_var, width=7).pack(side=tk.LEFT)
         ttk.Label(pf, text="  기본 9222", style="Dim.TLabel").pack(side=tk.LEFT)
+        ttk.Button(cb, text="접속 테스트", command=self._test_connections).grid(
+            row=6, column=2, columnspan=2, sticky=tk.EW, padx=(6, 0), pady=(6, 2))
 
         # ╔══════════════════════════════════════╗
         # ║  C: 계정 / 제어  (col 1, row 1)     ║
@@ -746,6 +745,28 @@ class BonusPickApp(tk.Tk):
             enabled = [a for a in self._accounts if a.get("enabled", True)]
             self._current_acct_var.set(
                 f"총 {len(self._accounts)}개  |  활성 {len(enabled)}개")
+
+    def _test_connections(self) -> None:
+        """입력된 사이트 URL 접속 가능 여부를 백그라운드 스레드에서 테스트."""
+        import urllib.request
+        urls = [v.get().strip() for v in self._site_url_vars if v.get().strip()]
+        if not urls:
+            messagebox.showinfo("접속 테스트", "입력된 사이트 URL이 없습니다.")
+            return
+
+        def _run():
+            lines = []
+            for url in urls:
+                try:
+                    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(req, timeout=8):
+                        lines.append(f"✓  {url}")
+                except Exception as e:
+                    lines.append(f"✗  {url}\n     {e}")
+            self.after(0, lambda m="\n\n".join(lines): messagebox.showinfo("접속 테스트 결과", m))
+
+        messagebox.showinfo("접속 테스트", f"{len(urls)}개 사이트 접속 테스트 중...\n완료되면 결과 팝업이 표시됩니다.")
+        threading.Thread(target=_run, daemon=True).start()
 
     def _open_account_manager(self) -> None:
         def on_save(accounts, current_idx):
