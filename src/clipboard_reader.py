@@ -20,8 +20,8 @@ from src.logger_config import setup_logger
 
 logger = setup_logger(__name__)
 
-CLIPBOARD_WAIT_TIMEOUT = 3.0   # 클립보드 업데이트 최대 대기 시간 (초)
-CLIPBOARD_POLL_INTERVAL = 0.05  # 폴링 간격 (초)
+CLIPBOARD_WAIT_TIMEOUT = 2.0   # 클립보드 업데이트 최대 대기 시간 (초)
+CLIPBOARD_POLL_INTERVAL = 0.03  # 폴링 간격 (초)
 
 
 # ---------------------------------------------------------------------------
@@ -49,9 +49,9 @@ def _click_chat_area(hwnd: int) -> None:
 
     ctypes.windll.user32.SetCursorPos(x, y)
     ctypes.windll.user32.mouse_event(0x0002, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTDOWN
-    time.sleep(0.05)
+    time.sleep(0.03)
     ctypes.windll.user32.mouse_event(0x0004, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTUP
-    time.sleep(0.1)
+    time.sleep(0.05)
 
 
 def _bring_to_foreground(hwnd: int) -> bool:
@@ -61,10 +61,10 @@ def _bring_to_foreground(hwnd: int) -> bool:
 
         if win32gui.IsIconic(hwnd):  # 최소화된 경우 복원
             win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-            time.sleep(0.3)
+            time.sleep(0.2)
 
         win32gui.SetForegroundWindow(hwnd)
-        time.sleep(0.2)
+        time.sleep(0.12)
         return True
     except Exception as exc:
         logger.warning(f"창 전경화 실패: {exc}")
@@ -106,7 +106,7 @@ def extract_chat_text(hwnd: int) -> Optional[str]:
 
     # 2. 채팅 내역 영역 클릭
     _click_chat_area(hwnd)
-    time.sleep(0.1)
+    time.sleep(0.05)
 
     # 3. 현재 클립보드 시퀀스 번호 기록
     seq_before = _get_clipboard_seq()
@@ -114,7 +114,7 @@ def extract_chat_text(hwnd: int) -> Optional[str]:
     # 4. Ctrl+A → Ctrl+C
     try:
         keyboard.send_keys("^a")
-        time.sleep(0.2)
+        time.sleep(0.1)
         keyboard.send_keys("^c")
     except Exception as exc:
         logger.warning(f"키 전송 실패: {exc}")
