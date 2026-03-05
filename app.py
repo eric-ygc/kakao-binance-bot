@@ -584,6 +584,7 @@ class App(tk.Tk):
         sb.grid(row=0, column=1, sticky="ns")
         self._log.grid(row=0, column=0, sticky="nsew")
 
+        self._log.tag_configure("date_time",   foreground=C["fg_dim"])
         self._log.tag_configure("timestamp",   foreground="#569cd6")
         self._log.tag_configure("sender",      foreground=C["accent"],
                                 font=("Consolas", 10, "bold"))
@@ -820,18 +821,20 @@ class App(tk.Tk):
     def _handle_message(self, msg: ChatMessage) -> None:
         code = msg.content.strip()
         is_code = bool(CODE_PATTERN.match(code))
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # 로그 영구 저장용 plain 라인
         if is_code:
-            plain = f"[{msg.timestamp_str}] {msg.sender}: {code}  ★"
+            plain = f"[{now_str}] [{msg.timestamp_str}] {msg.sender}: {code}  ★"
             self._log_lines.append({"text": plain, "tag": "caught_code"})
         else:
-            plain = f"[{msg.timestamp_str}] {msg.sender}: {msg.content}"
+            plain = f"[{now_str}] [{msg.timestamp_str}] {msg.sender}: {msg.content}"
             self._log_lines.append({"text": plain, "tag": ""})
         if len(self._log_lines) > 2000:
             self._log_lines = self._log_lines[-2000:]
 
         self._log.config(state=tk.NORMAL)
+        self._log.insert(tk.END, f"[{now_str}] ", "date_time")
         self._log.insert(tk.END, f"[{msg.timestamp_str}] ", "timestamp")
         self._log.insert(tk.END, f"{msg.sender}", "sender")
         self._log.insert(tk.END, ": ")
