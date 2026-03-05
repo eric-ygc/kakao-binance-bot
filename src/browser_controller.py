@@ -15,6 +15,7 @@ import time
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -108,15 +109,8 @@ def _do_login(driver, wait, login_url: str, email: str, password: str, _st) -> N
     email_input.send_keys(email)
     pw_input.clear()
     pw_input.send_keys(password)
-    time.sleep(0.3)  # 입력 안정화
-
-    try:
-        login_btn = wait.until(EC.element_to_be_clickable(
-            (By.XPATH, "//div[contains(@class,'login-btn')]")
-        ))
-    except TimeoutException:
-        raise RuntimeError("로그인 버튼을 찾을 수 없음")
-    _js_click(driver, login_btn)
+    time.sleep(0.2)  # 입력 안정화
+    pw_input.send_keys(Keys.RETURN)   # 버튼 클릭 없이 Enter로 제출
     _st("로그인 완료, 페이지 전환 대기...")
 
     # 로그인 후 URL이 login에서 벗어날 때까지 대기
