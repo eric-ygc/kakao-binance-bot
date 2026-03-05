@@ -33,10 +33,12 @@ CONFIG_PATH   = BASE_DIR / "bonus_config.json"
 LOG_DATA_PATH = BASE_DIR / "bonus_log_data.json"
 
 DEFAULT_CONFIG = {
-    "site_urls":     ["https://dsj44.com/h5/#/login", "", "", "", ""],
-    "chrome_port":   9222,
-    "accounts":      [],
-    "account_index": 0,
+    "site_urls":        ["https://dsj44.com/h5/#/login", "", "", "", ""],
+    "chrome_port":      9222,
+    "accounts":         [],
+    "account_index":    0,
+    "schedule_times":   ["", "", "", ""],
+    "schedule_enabled": [False, False, False, False],
 }
 
 logger = setup_logger("bonus_pick")
@@ -119,6 +121,8 @@ class BonusPickApp(tk.Tk):
         self._log_lines: list = []
         self._run_records: list = []       # {success, fail, datetime}
         self._current_step: int = -1
+        self._schedules: list = []         # [(BooleanVar, StringVar), ...]
+        self._last_triggered_time: str = ""
 
         cfg = load_config()
         self._accounts: list = list(cfg.get("accounts", []))
@@ -129,6 +133,7 @@ class BonusPickApp(tk.Tk):
         self._apply_dark_theme()
         self._build_ui(cfg)
         self._load_log_data()
+        self._start_scheduler()
         self._poll_queue()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -293,6 +298,35 @@ class BonusPickApp(tk.Tk):
         self._stop_btn.pack(side=tk.LEFT)
 
         tk.Frame(ca, bg=C["border"], height=1).pack(fill=tk.X, pady=(12, 6))
+
+        tk.Label(ca, text="예약 실행 시각  (HH:MM)",
+                 font=("Segoe UI", 8), fg=C["fg_dim"],
+                 bg=C["panel"]).pack(anchor=tk.W, pady=(0, 3))
+
+        sched_times   = cfg.get("schedule_times",   ["", "", "", ""])
+        sched_enabled = cfg.get("schedule_enabled", [False, False, False, False])
+        while len(sched_times)   < 4: sched_times.append("")
+        while len(sched_enabled) < 4: sched_enabled.append(False)
+
+        for row_idx in range(2):
+            srow = tk.Frame(ca, bg=C["panel"])
+            srow.pack(fill=tk.X, pady=1)
+            for col_idx in range(2):
+                i = row_idx * 2 + col_idx
+                ev = tk.BooleanVar(value=bool(sched_enabled[i]))
+                tv = tk.StringVar(value=str(sched_times[i]))
+                ttk.Checkbutton(srow, variable=ev,
+                                style="TCheckbutton").pack(side=tk.LEFT)
+                tk.Entry(srow,
+                         textvariable=tv,
+                         font=("Consolas", 10),
+                         fg=C["yellow"], bg=C["input"],
+                         insertbackground=C["yellow"],
+                         relief=tk.FLAT, justify=tk.CENTER,
+                         width=6).pack(side=tk.LEFT, padx=(2, 14))
+                self._schedules.append((ev, tv))
+
+        tk.Frame(ca, bg=C["border"], height=1).pack(fill=tk.X, pady=(8, 6))
 
         tk.Label(ca, text="최근 실행:",
                  font=("Segoe UI", 8), fg=C["fg_dim"],
@@ -469,6 +503,27 @@ class BonusPickApp(tk.Tk):
         for circ, lbl in zip(self._step_circles, self._step_labels_w):
             circ.config(text="○", fg=C["border"])
             lbl.config(fg=C["fg_dim"])
+
+    # ------------------------------------------------------------------
+    # 예약 실행
+    # ------------------------------------------------------------------
+
+    def _start_scheduler(self) -> None:
+        self._last_triggered_time = ""
+        self._check_schedule()
+
+    def _check_schedule(self) -> None:
+        if not self._running:
+            now = datetime.datetime.now().strftime("%H:%M")
+            if now != self._last_triggered_time:
+                for ev, tv in self._schedules:
+                    t = tv.get().strip()
+                    if ev.get() and t == now:
+                        self._last_triggered_time = now
+                        self._append_log(f"⏰ 예약 실행: {now}", tag="system")
+                        self._run_submit()
+                        break
+        self.after(10000, self._check_schedule)
 
     # ------------------------------------------------------------------
     # 실행 / 중지
@@ -710,10 +765,12 @@ class BonusPickApp(tk.Tk):
         except ValueError:
             port = 9222
         return {
-            "site_urls":     [v.get().strip() for v in self._site_url_vars],
-            "chrome_port":   port,
-            "accounts":      self._accounts,
-            "account_index": self._account_idx,
+            "site_urls":        [v.get().strip() for v in self._site_url_vars],
+            "chrome_port":      port,
+            "accounts":         self._accounts,
+            "account_index":    self._account_idx,
+            "schedule_times":   [tv.get().strip() for _, tv in self._schedules],
+            "schedule_enabled": [bool(ev.get()) for ev, _ in self._schedules],
         }
 
     def _on_close(self) -> None:
