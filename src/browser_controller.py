@@ -123,9 +123,31 @@ def _do_login(driver, wait, login_url: str, email: str, password: str, _st) -> N
     email_input.send_keys(email)
     pw_input.clear()
     pw_input.send_keys(password)
-    time.sleep(0.2)
-    pw_input.send_keys(Keys.RETURN)  # 버튼 클릭 없이 Enter로 제출
-    _st("로그인 완료, 페이지 전환 대기...")
+    time.sleep(0.3)
+
+    # 로그인 버튼 클릭 (실패 시 Enter 폴백)
+    _LOGIN_BTN_XPATH = (
+        "//button["
+        f"  contains({_ci('text()')}, 'login')"
+        f"  or contains({_ci('text()')}, 'log in')"
+        f"  or contains({_ci('text()')}, 'sign in')"
+        f"  or contains({_ci('text()')}, '로그인')"
+        f"  or @type='submit'"
+        "]"
+        " | //div["
+        f"  contains({_ci('text()')}, 'login')"
+        f"  or contains({_ci('text()')}, 'log in')"
+        f"  or contains({_ci('text()')}, '로그인')"
+        "]"
+    )
+    try:
+        btn = wait.until(EC.element_to_be_clickable((By.XPATH, _LOGIN_BTN_XPATH)))
+        _js_click(driver, btn)
+        _st("로그인 버튼 클릭 완료")
+    except TimeoutException:
+        pw_input.send_keys(Keys.RETURN)
+        _st("로그인 버튼 미발견 → Enter 제출")
+    _st("페이지 전환 대기...")
 
     try:
         wait.until(lambda d: "login" not in d.current_url.lower())
