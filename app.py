@@ -44,6 +44,10 @@ DEFAULT_CONFIG = {
     "site_urls": ["https://dsj44.com/h5/#/login", "", "", "", ""],
     "accounts": [],
     "account_index": 0,
+    "monitor_schedules": [
+        {"enabled": False, "start": "", "stop": ""},
+        {"enabled": False, "start": "", "stop": ""},
+    ],
 }
 
 CODE_PATTERN = re.compile(r'^[A-Za-z0-9]{9}$')
@@ -120,6 +124,8 @@ class App(tk.Tk):
         self._caught_codes_full: list = []   # {"code","ts","sender","datetime"}
         self._log_lines: list = []            # {"text","tag"} — 최대 2000줄
         self._processed_codes: set = set()
+        self._monitor_schedules: list = []   # [(enabled_var, start_var, stop_var), ...]
+        self._last_sched_action: list = ["", ""]  # 중복 실행 방지
 
         cfg = load_config()
         self._accounts: list = list(cfg.get("accounts", []))
@@ -130,6 +136,7 @@ class App(tk.Tk):
         self._apply_dark_theme()
         self._build_ui(cfg)
         self._load_log_data()
+        self._start_monitor_scheduler()
         self._poll_queue()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -448,6 +455,38 @@ class App(tk.Tk):
         ttk.Button(bf, text="텍스트 저장",
                    command=self._export_text).pack(side=tk.LEFT)
 
+        # 예약 시작·종료
+        tk.Frame(cc, bg=C["border"], height=1).pack(fill=tk.X, pady=(10, 6))
+        tk.Label(cc, text="예약 시작·종료 시각  (HH:MM)",
+                 font=("Segoe UI", 8), fg=C["fg_dim"],
+                 bg=C["panel"]).pack(anchor=tk.W, pady=(0, 3))
+
+        saved_scheds = cfg.get("monitor_schedules", DEFAULT_CONFIG["monitor_schedules"])
+        while len(saved_scheds) < 2:
+            saved_scheds.append({"enabled": False, "start": "", "stop": ""})
+
+        for i, sc in enumerate(saved_scheds[:2]):
+            ev  = tk.BooleanVar(value=bool(sc.get("enabled", False)))
+            sv  = tk.StringVar(value=str(sc.get("start", "")))
+            stv = tk.StringVar(value=str(sc.get("stop", "")))
+            self._monitor_schedules.append((ev, sv, stv))
+
+            row = tk.Frame(cc, bg=C["panel"])
+            row.pack(fill=tk.X, pady=1)
+            ttk.Checkbutton(row, variable=ev, style="TCheckbutton").pack(side=tk.LEFT)
+            tk.Label(row, text="시작", font=("Segoe UI", 8),
+                     fg=C["fg_dim"], bg=C["panel"]).pack(side=tk.LEFT, padx=(2, 2))
+            tk.Entry(row, textvariable=sv,
+                     font=("Consolas", 10), fg=C["ok"], bg=C["input"],
+                     insertbackground=C["ok"], relief=tk.FLAT,
+                     justify=tk.CENTER, width=6).pack(side=tk.LEFT)
+            tk.Label(row, text="  종료", font=("Segoe UI", 8),
+                     fg=C["fg_dim"], bg=C["panel"]).pack(side=tk.LEFT, padx=(6, 2))
+            tk.Entry(row, textvariable=stv,
+                     font=("Consolas", 10), fg=C["error"], bg=C["input"],
+                     insertbackground=C["error"], relief=tk.FLAT,
+                     justify=tk.CENTER, width=6).pack(side=tk.LEFT)
+
         # ╔══════════════════════════════════════╗
         # ║  D: 자동 입력 설정  (full, row 2)   ║
         # ╚══════════════════════════════════════╝
@@ -573,6 +612,12 @@ class App(tk.Tk):
             "site_urls": [v.get().strip() for v in self._site_url_vars],
             "accounts": self._accounts,
             "account_index": self._account_idx,
+            "monitor_schedules": [
+                {"enabled": bool(ev.get()),
+                 "start": sv.get().strip(),
+                 "stop": stv.get().strip()}
+                for ev, sv, stv in self._monitor_schedules
+            ],
         }
 
     # ------------------------------------------------------------------
@@ -649,6 +694,43 @@ class App(tk.Tk):
         self._stop_btn.config(state=tk.DISABLED)
         self._status_var.set("중지됨")
         self._append_log("── 모니터링 중지 ──", tag="system")
+
+    # ------------------------------------------------------------------
+    # 예약 시작·종료 스케줄러
+    # ------------------------------------------------------------------
+
+    def _start_monitor_scheduler(self) -> None:
+        self._last_sched_action = ["", ""]
+        self._check_monitor_schedule()
+
+    def _check_monitor_schedule(self) -> None:
+        now = datetime.datetime.now().strftime("%H:%M")
+        is_running = (self._stop_event is not None and
+                      not self._stop_event.is_set())
+
+        for i, (ev, sv, stv) in enumerate(self._monitor_schedules):
+            if not ev.get():
+                continue
+            start_t = sv.get().strip()
+            stop_t  = stv.get().strip()
+
+            if start_t and start_t == now and not is_running:
+                key = f"start-{now}-{i}"
+                if self._last_sched_action[i] != key:
+                    self._last_sched_action[i] = key
+                    self._append_log(f"⏰ 예약 시작: {now}", tag="system")
+                    self._start_monitor()
+                    is_running = True
+
+            if stop_t and stop_t == now and is_running:
+                key = f"stop-{now}-{i}"
+                if self._last_sched_action[i] != key:
+                    self._last_sched_action[i] = key
+                    self._append_log(f"⏰ 예약 종료: {now}", tag="system")
+                    self._stop_monitor()
+                    is_running = False
+
+        self.after(10000, self._check_monitor_schedule)
 
     def _clear_log(self) -> None:
         self._log_lines.clear()
