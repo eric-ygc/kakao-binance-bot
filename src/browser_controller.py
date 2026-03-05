@@ -162,25 +162,41 @@ def _do_login(driver, wait, login_url: str, email: str, password: str, _st,
     # 로그인 버튼 클릭 — JavaScript DOM 탐색으로 버튼 클릭
     time.sleep(0.5)  # 버튼 렌더링 대기
     clicked = driver.execute_script("""
+        function isVisible(el) {
+            var r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0;
+        }
+        // 1순위: class 에 'login-btn' / 'loginBtn' / 'login_btn' 포함
+        var byClass = document.querySelectorAll(
+            '[class*="login-btn"], [class*="loginBtn"], [class*="login_btn"]'
+        );
+        for (var i = 0; i < byClass.length; i++) {
+            if (isVisible(byClass[i])) {
+                byClass[i].click();
+                return byClass[i].className;
+            }
+        }
+        // 2순위: button[type=submit] 또는 input[type=submit]
+        var submits = document.querySelectorAll('button[type="submit"], input[type="submit"]');
+        for (var i = 0; i < submits.length; i++) {
+            if (isVisible(submits[i])) {
+                submits[i].click();
+                return submits[i].textContent.trim() || 'submit';
+            }
+        }
+        // 3순위: 텍스트가 정확히 'login' 또는 '로그인' 인 요소 (title/header 클래스 제외)
         var keywords = ['login', '로그인', 'log in', 'sign in'];
-        var candidates = Array.from(document.querySelectorAll(
-            'button, input[type="submit"], [role="button"], div, span, a'
-        ));
+        var candidates = document.querySelectorAll('button, [role="button"], div, span, a');
         for (var i = 0; i < candidates.length; i++) {
             var el = candidates[i];
-            var rect = el.getBoundingClientRect();
-            if (rect.width === 0 || rect.height === 0) continue;
-            var text = (el.textContent || el.value || '').trim().toLowerCase();
-            var tag = el.tagName.toLowerCase();
-            var isSubmit = (el.type === 'submit') || (el.getAttribute('type') === 'submit');
-            var hasKeyword = keywords.some(function(k){ return text === k || text.includes(k); });
-            // div/span/a 는 input 자식이 없는 것만 (폼 컨테이너 제외)
-            if (tag === 'div' || tag === 'span' || tag === 'a') {
-                if (el.querySelector('input') || el.querySelector('button')) continue;
-            }
-            if (isSubmit || (hasKeyword && text.length < 20)) {
+            if (!isVisible(el)) continue;
+            var cls = (el.className || '').toString().toLowerCase();
+            if (cls.includes('title') || cls.includes('header') || cls.includes('download') || cls.includes('back')) continue;
+            if (el.querySelector('input') || el.querySelector('button')) continue;
+            var text = (el.textContent || '').trim().toLowerCase();
+            if (keywords.some(function(k){ return text === k; })) {
                 el.click();
-                return el.textContent.trim() || el.type;
+                return el.textContent.trim();
             }
         }
         return null;
