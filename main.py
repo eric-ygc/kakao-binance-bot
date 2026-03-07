@@ -1,6 +1,7 @@
 """
 카카오 매매봇 — 카카오모니터 + 보너스픽 통합 앱
 """
+import json
 import sys
 import tkinter as tk
 from pathlib import Path
@@ -61,13 +62,29 @@ class MainApp(tk.Tk):
         nb.add(tab1, text="  고정픽  ")
         nb.add(tab2, text="  보너스픽  ")
 
-        self._app = App(tab1)
+        # 사이트 URL 공유 변수 — 고정픽 config.json 기준으로 초기값 로드
+        shared_urls = self._load_shared_site_urls()
+
+        self._app = App(tab1, shared_site_url_vars=shared_urls)
         self._app.pack(fill=tk.BOTH, expand=True)
 
-        self._bonus = BonusPickApp(tab2)
+        self._bonus = BonusPickApp(tab2, shared_site_url_vars=shared_urls)
         self._bonus.pack(fill=tk.BOTH, expand=True)
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _load_shared_site_urls(self) -> list:
+        """고정픽 config.json에서 사이트 URL을 읽어 공유 StringVar 10개 반환."""
+        try:
+            cfg_path = BASE_DIR / "config.json"
+            with open(cfg_path, encoding="utf-8") as f:
+                data = json.load(f)
+            urls = data.get("site_urls", [])
+        except Exception:
+            urls = []
+        while len(urls) < 10:
+            urls.append("")
+        return [tk.StringVar(value=urls[i]) for i in range(10)]
 
     def _on_close(self) -> None:
         self._app._on_close()

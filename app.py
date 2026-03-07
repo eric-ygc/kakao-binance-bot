@@ -112,7 +112,7 @@ def save_config(cfg: dict) -> None:
 # ---------------------------------------------------------------------------
 
 class App(tk.Frame):
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent=None, shared_site_url_vars=None) -> None:
         if parent is None:
             self._win = tk.Tk()
             self._win.title("고정픽")
@@ -123,6 +123,7 @@ class App(tk.Frame):
         else:
             self._win = None
         super().__init__(parent, bg=C["bg"])
+        self._shared_site_url_vars = shared_site_url_vars
 
         self._monitor_thread: Optional[threading.Thread] = None
         self._stop_event: Optional[threading.Event] = None
@@ -536,7 +537,10 @@ class App(tk.Frame):
             saved_urls = [saved_urls] + [""] * 9
         while len(saved_urls) < 10:
             saved_urls.append("")
-        self._site_url_vars = [tk.StringVar(value=saved_urls[i]) for i in range(10)]
+        if self._shared_site_url_vars is not None:
+            self._site_url_vars = self._shared_site_url_vars
+        else:
+            self._site_url_vars = [tk.StringVar(value=saved_urls[i]) for i in range(10)]
         self._site_url_entries = []
 
         for pr, (li, ri) in enumerate([(0,1),(2,3),(4,5),(6,7),(8,9)], start=1):
