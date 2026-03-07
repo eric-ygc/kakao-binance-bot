@@ -24,7 +24,7 @@ NEU_LIGHT = "#ffffff"
 class MainApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("카카오 매매봇")
+        self.title("픽보조")
         self.resizable(True, True)
         self.minsize(560, 680)
         self.configure(bg=NEU_BG)
@@ -58,7 +58,7 @@ class MainApp(tk.Tk):
 
         tab1 = tk.Frame(nb, bg=NEU_BG)
         tab2 = tk.Frame(nb, bg=NEU_BG)
-        nb.add(tab1, text="  카카오모니터  ")
+        nb.add(tab1, text="  고정픽  ")
         nb.add(tab2, text="  보너스픽  ")
 
         self._app = App(tab1)

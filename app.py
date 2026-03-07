@@ -115,7 +115,7 @@ class App(tk.Frame):
     def __init__(self, parent=None) -> None:
         if parent is None:
             self._win = tk.Tk()
-            self._win.title("카카오 메시지 모니터")
+            self._win.title("고정픽")
             self._win.resizable(True, True)
             self._win.minsize(560, 680)
             self._win.configure(bg=C["bg"])
