@@ -111,14 +111,18 @@ def save_config(cfg: dict) -> None:
 # GUI 앱
 # ---------------------------------------------------------------------------
 
-class App(tk.Tk):
-    def __init__(self) -> None:
-        super().__init__()
-
-        self.title("카카오 메시지 모니터")
-        self.resizable(True, True)
-        self.minsize(560, 680)
-        self.configure(bg=C["bg"])
+class App(tk.Frame):
+    def __init__(self, parent=None) -> None:
+        if parent is None:
+            self._win = tk.Tk()
+            self._win.title("카카오 메시지 모니터")
+            self._win.resizable(True, True)
+            self._win.minsize(560, 680)
+            self._win.configure(bg=C["bg"])
+            parent = self._win
+        else:
+            self._win = None
+        super().__init__(parent, bg=C["bg"])
 
         self._monitor_thread: Optional[threading.Thread] = None
         self._stop_event: Optional[threading.Event] = None
@@ -142,7 +146,8 @@ class App(tk.Tk):
         self._load_log_data()
         self._start_monitor_scheduler()
         self._poll_queue()
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        if self._win is not None:
+            self._win.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ------------------------------------------------------------------
     # 다크 테마 적용
@@ -334,13 +339,13 @@ class App(tk.Tk):
     # ------------------------------------------------------------------
 
     # ------------------------------------------------------------------
-    # Bento Grid 카드 헬퍼
+    # 카드 헬퍼
     # ------------------------------------------------------------------
 
     def _make_card(self, parent: tk.Widget, title: str = "") -> tk.Frame:
         """
         Neumorphic 카드: Card.TFrame (raised, NEU_LIGHT/NEU_DARK) → pad → body.
-        반환값(body)의 ._outer 속성으로 외부에서 grid 배치.
+        반환값(body)의 ._outer 속성으로 외부에서 pack 배치.
         """
         outer = ttk.Frame(parent, style="Card.TFrame", padding=3)
         pad = tk.Frame(outer, bg=C["bg"])
@@ -357,11 +362,11 @@ class App(tk.Tk):
         return body
 
     # ------------------------------------------------------------------
-    # UI 구성 — Bento Grid
+    # UI 구성
     # ------------------------------------------------------------------
 
     def _build_ui(self, cfg: dict) -> None:
-        G = 6   # card gap
+        G = 8   # card gap
 
         # ── 상태바 (하단 고정) ─────────────────────────────────────
         self._status_var = tk.StringVar(value="대기 중")
@@ -370,22 +375,17 @@ class App(tk.Tk):
                  font=("Segoe UI", 8), anchor=tk.W,
                  padx=10, pady=3).pack(fill=tk.X, side=tk.BOTTOM)
 
-        # ── Bento 그리드 컨테이너 ──────────────────────────────────
-        bento = tk.Frame(self, bg=C["bg"])
-        bento.pack(fill=tk.BOTH, expand=True, padx=G, pady=G)
+        # ── 메인 컨테이너 ─────────────────────────────────────────────
+        main = tk.Frame(self, bg=C["bg"])
+        main.pack(fill=tk.BOTH, expand=True, padx=G, pady=G)
 
-        # col 0: 코드 카드 (고정폭)  /  col 1: 나머지 (확장)
-        bento.columnconfigure(0, weight=0, minsize=232)
-        bento.columnconfigure(1, weight=1)
-        # row 3: 로그 카드만 세로 확장
-        bento.rowconfigure(3, weight=1)
+        # ── 상단 행: 코드캐치(좌) + 설정·제어(우) ─────────────────────
+        top_row = tk.Frame(main, bg=C["bg"])
+        top_row.pack(fill=tk.X, pady=(0, G))
 
-        # ╔══════════════════════════════════════╗
-        # ║  A: 캐치된 코드  (col 0, row 0–1)   ║
-        # ╚══════════════════════════════════════╝
-        ca = self._make_card(bento)
-        ca._outer.grid(row=0, column=0, rowspan=2, sticky="nsew",
-                       padx=(0, G), pady=(0, G))
+        # ─── 코드 캐치 카드 (좌) ──────────────────────────────────────
+        ca = self._make_card(top_row)
+        ca._outer.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, G))
 
         tk.Label(ca, text="캐치된 코드",
                  bg=C["panel"], fg=C["accent"],
@@ -417,11 +417,13 @@ class App(tk.Tk):
                  font=("Consolas", 8), fg=C["accent"], bg=C["panel"],
                  wraplength=190, justify=tk.LEFT).pack(side=tk.LEFT, padx=4)
 
-        # ╔══════════════════════════════════════╗
-        # ║  B: 모니터링 설정  (col 1, row 0)   ║
-        # ╚══════════════════════════════════════╝
-        cb = self._make_card(bento, "모니터링 설정")
-        cb._outer.grid(row=0, column=1, sticky="nsew", pady=(0, G))
+        # ─── 우측 컬럼 (모니터링 설정 + 제어 버튼) ───────────────────
+        right_col = tk.Frame(top_row, bg=C["bg"])
+        right_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # ─── 모니터링 설정 카드 ────────────────────────────────────────
+        cb = self._make_card(right_col, "모니터링 설정")
+        cb._outer.pack(fill=tk.X, pady=(0, G))
         cb.columnconfigure(1, weight=1)
 
         ttk.Label(cb, text="채팅방 이름", style="Panel.TLabel").grid(
@@ -452,11 +454,9 @@ class App(tk.Tk):
                         command=self._toggle_topmost).grid(
             row=3, column=0, columnspan=3, sticky=tk.W, pady=(6, 0))
 
-        # ╔══════════════════════════════════════╗
-        # ║  C: 제어 버튼  (col 1, row 1)       ║
-        # ╚══════════════════════════════════════╝
-        cc = self._make_card(bento)
-        cc._outer.grid(row=1, column=1, sticky="nsew", pady=(0, G))
+        # ─── 제어 버튼 카드 ────────────────────────────────────────────
+        cc = self._make_card(right_col)
+        cc._outer.pack(fill=tk.X)
 
         bf = tk.Frame(cc, bg=C["panel"])
         bf.pack(fill=tk.X)
@@ -496,27 +496,25 @@ class App(tk.Tk):
             stv = tk.StringVar(value=str(sc.get("stop", "")))
             self._monitor_schedules.append((ev, sv, stv))
 
-            row = tk.Frame(cc, bg=C["panel"])
-            row.pack(fill=tk.X, pady=1)
-            ttk.Checkbutton(row, variable=ev, style="TCheckbutton").pack(side=tk.LEFT)
-            tk.Label(row, text="시작", font=("Segoe UI", 8),
+            srow = tk.Frame(cc, bg=C["panel"])
+            srow.pack(fill=tk.X, pady=1)
+            ttk.Checkbutton(srow, variable=ev, style="TCheckbutton").pack(side=tk.LEFT)
+            tk.Label(srow, text="시작", font=("Segoe UI", 8),
                      fg=C["fg_dim"], bg=C["panel"]).pack(side=tk.LEFT, padx=(2, 2))
-            tk.Entry(row, textvariable=sv,
+            tk.Entry(srow, textvariable=sv,
                      font=("Consolas", 10), fg=C["ok"], bg=C["input"],
                      insertbackground=C["ok"], relief=tk.FLAT,
                      justify=tk.CENTER, width=6).pack(side=tk.LEFT)
-            tk.Label(row, text="  종료", font=("Segoe UI", 8),
+            tk.Label(srow, text="  종료", font=("Segoe UI", 8),
                      fg=C["fg_dim"], bg=C["panel"]).pack(side=tk.LEFT, padx=(6, 2))
-            tk.Entry(row, textvariable=stv,
+            tk.Entry(srow, textvariable=stv,
                      font=("Consolas", 10), fg=C["error"], bg=C["input"],
                      insertbackground=C["error"], relief=tk.FLAT,
                      justify=tk.CENTER, width=6).pack(side=tk.LEFT)
 
-        # ╔══════════════════════════════════════╗
-        # ║  D: 자동 입력 설정  (full, row 2)   ║
-        # ╚══════════════════════════════════════╝
-        cd = self._make_card(bento, "자동 입력 설정")
-        cd._outer.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(0, G))
+        # ─── 자동 입력 설정 카드 ──────────────────────────────────────
+        cd = self._make_card(main, "자동 입력 설정")
+        cd._outer.pack(fill=tk.X, pady=(0, G))
         cd.columnconfigure(1, weight=1)
         cd.columnconfigure(3, weight=1)
 
@@ -533,7 +531,6 @@ class App(tk.Tk):
             self._auto_var.set(False)
             auto_chk.config(state=tk.DISABLED)
 
-        # 사이트 URL — 5개를 2열 배치
         saved_urls = cfg.get("site_urls", DEFAULT_CONFIG["site_urls"])
         if isinstance(saved_urls, str):
             saved_urls = [saved_urls] + [""] * 9
@@ -558,7 +555,6 @@ class App(tk.Tk):
             e_r.grid(row=pr, column=3, sticky=tk.EW, padx=(6, 0), pady=2)
             self._site_url_entries.append(e_r)
 
-        # Chrome 포트 + 접속 테스트
         ttk.Label(cd, text="Chrome 포트", style="Panel.TLabel").grid(
             row=6, column=0, sticky=tk.W, pady=(6, 2))
         pf = ttk.Frame(cd, style="Panel.TFrame")
@@ -569,7 +565,6 @@ class App(tk.Tk):
         ttk.Button(cd, text="접속 테스트", command=self._test_connections).grid(
             row=6, column=2, columnspan=2, sticky=tk.EW, padx=(6, 0), pady=(6, 2))
 
-        # 현재 계정
         ttk.Label(cd, text="현재 계정", style="Panel.TLabel").grid(
             row=7, column=0, sticky=tk.W, pady=(8, 2))
         self._current_acct_var = tk.StringVar()
@@ -582,21 +577,12 @@ class App(tk.Tk):
             row=7, column=3, sticky=tk.E, pady=(8, 2))
         self._update_current_acct_label()
 
-        # ╔══════════════════════════════════════╗
-        # ║  E: 메시지 로그  (full, row 3, 확장) ║
-        # ╚══════════════════════════════════════╝
-        ce = self._make_card(bento, "메시지 로그")
-        ce._outer.grid(row=3, column=0, columnspan=2, sticky="nsew")
-        ce.columnconfigure(0, weight=1)
-        ce.rowconfigure(0, weight=1)
-
-        log_frame = tk.Frame(ce, bg=C["log_bg"])
-        log_frame.grid(row=0, column=0, sticky="nsew")
-        log_frame.rowconfigure(0, weight=1)
-        log_frame.columnconfigure(0, weight=1)
+        # ─── 메시지 로그 카드 ──────────────────────────────────────────
+        ce = self._make_card(main, "메시지 로그")
+        ce._outer.pack(fill=tk.BOTH, expand=True)
 
         self._log = tk.Text(
-            log_frame, state=tk.DISABLED,
+            ce, state=tk.DISABLED,
             background=C["log_bg"], foreground=C["fg"],
             insertbackground=C["fg"],
             relief=tk.FLAT, wrap=tk.WORD,
@@ -604,10 +590,10 @@ class App(tk.Tk):
             selectbackground=C["sel"],
             padx=6, pady=4,
         )
-        sb = ttk.Scrollbar(log_frame, command=self._log.yview)
+        sb = ttk.Scrollbar(ce, command=self._log.yview)
         self._log.configure(yscrollcommand=sb.set)
-        sb.grid(row=0, column=1, sticky="ns")
-        self._log.grid(row=0, column=0, sticky="nsew")
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+        self._log.pack(fill=tk.BOTH, expand=True)
 
         self._log.tag_configure("date_time",   foreground=C["fg_dim"])
         self._log.tag_configure("timestamp",   foreground="#2471a3")
@@ -806,7 +792,8 @@ class App(tk.Tk):
             self._stop_event.set()
         self._save_log_data()
         save_config(self._get_current_config())
-        self.destroy()
+        if self._win is not None:
+            self._win.destroy()
 
     # ------------------------------------------------------------------
     # 스레드 → GUI
@@ -954,7 +941,7 @@ class App(tk.Tk):
                 self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
                 return
             except Exception as e:
-                self._msg_queue.put(("error", f"✗ 실패: {acct_label} — {e}"))
+                self._msg_queue.put(("error", f"✗ 실패: {acct_label} [{type(e).__name__}] — {e}"))
                 fail_count += 1
 
         tag = "auto_ok" if fail_count == 0 else "system"
@@ -1420,4 +1407,4 @@ class AccountManagerDialog(tk.Toplevel):
 
 if __name__ == "__main__":
     app = App()
-    app.mainloop()
+    app._win.mainloop()

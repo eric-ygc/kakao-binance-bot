@@ -110,13 +110,18 @@ def save_config(cfg: dict) -> None:
 # GUI 앱
 # ---------------------------------------------------------------------------
 
-class BonusPickApp(tk.Tk):
-    def __init__(self) -> None:
-        super().__init__()
-        self.title("보너스픽")
-        self.resizable(True, True)
-        self.minsize(580, 500)
-        self.configure(bg=C["bg"])
+class BonusPickApp(tk.Frame):
+    def __init__(self, parent=None) -> None:
+        if parent is None:
+            self._win = tk.Tk()
+            self._win.title("보너스픽")
+            self._win.resizable(True, True)
+            self._win.minsize(580, 500)
+            self._win.configure(bg=C["bg"])
+            parent = self._win
+        else:
+            self._win = None
+        super().__init__(parent, bg=C["bg"])
 
         self._auto_cancel_event: threading.Event = threading.Event()
         self._msg_queue: queue.Queue = queue.Queue()
@@ -139,7 +144,8 @@ class BonusPickApp(tk.Tk):
         self._load_log_data()
         self._start_scheduler()
         self._poll_queue()
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        if self._win is not None:
+            self._win.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ------------------------------------------------------------------
     # 다크 테마
@@ -251,7 +257,7 @@ class BonusPickApp(tk.Tk):
         s.map("Treeview.Heading", background=[("active", C["panel2"])])
 
     # ------------------------------------------------------------------
-    # Bento 카드 헬퍼
+    # 카드 헬퍼
     # ------------------------------------------------------------------
 
     def _make_card(self, parent: tk.Widget, title: str = "") -> tk.Frame:
@@ -270,11 +276,11 @@ class BonusPickApp(tk.Tk):
         return body
 
     # ------------------------------------------------------------------
-    # UI 구성 — Bento Grid
+    # UI 구성
     # ------------------------------------------------------------------
 
     def _build_ui(self, cfg: dict) -> None:
-        G = 6
+        G = 8
 
         # ── 상태바 ────────────────────────────────────────────────
         self._status_var = tk.StringVar(value="대기 중")
@@ -283,19 +289,17 @@ class BonusPickApp(tk.Tk):
                  font=("Segoe UI", 8), anchor=tk.W,
                  padx=10, pady=3).pack(fill=tk.X, side=tk.BOTTOM)
 
-        # ── Bento 그리드 ──────────────────────────────────────────
-        bento = tk.Frame(self, bg=C["bg"])
-        bento.pack(fill=tk.BOTH, expand=True, padx=G, pady=G)
-        bento.columnconfigure(0, weight=0, minsize=240)
-        bento.columnconfigure(1, weight=1)
-        bento.rowconfigure(3, weight=1)   # 로그 카드만 세로 확장
+        # ── 메인 컨테이너 ─────────────────────────────────────────
+        main = tk.Frame(self, bg=C["bg"])
+        main.pack(fill=tk.BOTH, expand=True, padx=G, pady=G)
 
-        # ╔══════════════════════════════════════╗
-        # ║  A: 실행 제어  (col 0, row 0–1)     ║
-        # ╚══════════════════════════════════════╝
-        ca = self._make_card(bento)
-        ca._outer.grid(row=0, column=0, rowspan=2, sticky="nsew",
-                       padx=(0, G), pady=(0, G))
+        # ── 상단 행: 실행 제어(좌) + 사이트·계정(우) ──────────────
+        top_row = tk.Frame(main, bg=C["bg"])
+        top_row.pack(fill=tk.X, pady=(0, G))
+
+        # ─── 실행 제어 카드 (좌) ──────────────────────────────────
+        ca = self._make_card(top_row)
+        ca._outer.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, G))
 
         tk.Label(ca, text="실행 제어",
                  bg=C["panel"], fg=C["accent"],
@@ -352,11 +356,13 @@ class BonusPickApp(tk.Tk):
                  font=("Consolas", 8), fg=C["accent"], bg=C["panel"],
                  wraplength=210, justify=tk.LEFT).pack(anchor=tk.W, padx=2, pady=(2, 0))
 
-        # ╔══════════════════════════════════════╗
-        # ║  B: 사이트 설정  (col 1, row 0)     ║
-        # ╚══════════════════════════════════════╝
-        cb = self._make_card(bento, "사이트 설정")
-        cb._outer.grid(row=0, column=1, sticky="nsew", pady=(0, G))
+        # ─── 우측 컬럼 (사이트 설정 + 계정 설정) ─────────────────
+        right_col = tk.Frame(top_row, bg=C["bg"])
+        right_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # ─── 사이트 설정 카드 ──────────────────────────────────────
+        cb = self._make_card(right_col, "사이트 설정")
+        cb._outer.pack(fill=tk.X, pady=(0, G))
         cb.columnconfigure(1, weight=1)
         cb.columnconfigure(3, weight=1)
 
@@ -390,7 +396,6 @@ class BonusPickApp(tk.Tk):
             e_r.grid(row=pr, column=3, sticky=tk.EW, padx=(6, 0), pady=2)
             self._site_url_entries.append(e_r)
 
-        # Chrome 포트 + 접속 테스트
         ttk.Label(cb, text="Chrome 포트", style="Panel.TLabel").grid(
             row=6, column=0, sticky=tk.W, pady=(6, 2))
         pf = ttk.Frame(cb, style="Panel.TFrame")
@@ -401,11 +406,9 @@ class BonusPickApp(tk.Tk):
         ttk.Button(cb, text="접속 테스트", command=self._test_connections).grid(
             row=6, column=2, columnspan=2, sticky=tk.EW, padx=(6, 0), pady=(6, 2))
 
-        # ╔══════════════════════════════════════╗
-        # ║  C: 계정 / 제어  (col 1, row 1)     ║
-        # ╚══════════════════════════════════════╝
-        cc = self._make_card(bento, "계정 설정")
-        cc._outer.grid(row=1, column=1, sticky="nsew", pady=(0, G))
+        # ─── 계정 설정 카드 ────────────────────────────────────────
+        cc = self._make_card(right_col, "계정 설정")
+        cc._outer.pack(fill=tk.X)
         cc.columnconfigure(1, weight=1)
 
         ttk.Label(cc, text="현재 계정", style="Panel.TLabel").grid(
@@ -430,11 +433,9 @@ class BonusPickApp(tk.Tk):
         ttk.Button(ctrl_row, text="텍스트 저장",
                    command=self._export_text).pack(side=tk.LEFT)
 
-        # ╔══════════════════════════════════════╗
-        # ║  D: 진행 단계  (full, row 2)        ║
-        # ╚══════════════════════════════════════╝
-        cstep = self._make_card(bento, "진행 단계")
-        cstep._outer.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(0, G))
+        # ─── 진행 단계 카드 ────────────────────────────────────────
+        cstep = self._make_card(main, "진행 단계")
+        cstep._outer.pack(fill=tk.X, pady=(0, G))
 
         self._step_circles: list = []
         self._step_labels_w: list = []
@@ -458,21 +459,12 @@ class BonusPickApp(tk.Tk):
                          bg=C["panel"], fg=C["border"],
                          font=("Segoe UI", 9)).pack(side=tk.LEFT)
 
-        # ╔══════════════════════════════════════╗
-        # ║  E: 실행 로그  (full, row 3, 확장)  ║
-        # ╚══════════════════════════════════════╝
-        cd = self._make_card(bento, "실행 로그")
-        cd._outer.grid(row=3, column=0, columnspan=2, sticky="nsew")
-        cd.columnconfigure(0, weight=1)
-        cd.rowconfigure(0, weight=1)
-
-        log_frame = tk.Frame(cd, bg=C["log_bg"])
-        log_frame.grid(row=0, column=0, sticky="nsew")
-        log_frame.rowconfigure(0, weight=1)
-        log_frame.columnconfigure(0, weight=1)
+        # ─── 실행 로그 카드 ────────────────────────────────────────
+        cd = self._make_card(main, "실행 로그")
+        cd._outer.pack(fill=tk.BOTH, expand=True)
 
         self._log = tk.Text(
-            log_frame, state=tk.DISABLED,
+            cd, state=tk.DISABLED,
             background=C["log_bg"], foreground=C["fg"],
             insertbackground=C["fg"],
             relief=tk.FLAT, wrap=tk.WORD,
@@ -480,10 +472,10 @@ class BonusPickApp(tk.Tk):
             selectbackground=C["sel"],
             padx=6, pady=4,
         )
-        sb = ttk.Scrollbar(log_frame, command=self._log.yview)
+        sb = ttk.Scrollbar(cd, command=self._log.yview)
         self._log.configure(yscrollcommand=sb.set)
-        sb.grid(row=0, column=1, sticky="ns")
-        self._log.grid(row=0, column=0, sticky="nsew")
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+        self._log.pack(fill=tk.BOTH, expand=True)
 
         self._log.tag_configure("system", foreground=C["system"],
                                 font=("Consolas", 10, "italic"))
@@ -628,7 +620,7 @@ class BonusPickApp(tk.Tk):
                 self._msg_queue.put(("system", "── 취소됨 ──"))
                 break
             except Exception as e:
-                self._msg_queue.put(("error", f"✗ 실패: {acct_label} — {e}"))
+                self._msg_queue.put(("error", f"✗ 실패: {acct_label} [{type(e).__name__}] — {e}"))
                 fail_count += 1
 
         tag = "ok" if fail_count == 0 else "system"
@@ -828,7 +820,8 @@ class BonusPickApp(tk.Tk):
         self._auto_cancel_event.set()
         self._save_log_data()
         save_config(self._get_current_config())
-        self.destroy()
+        if self._win is not None:
+            self._win.destroy()
 
 
 # ---------------------------------------------------------------------------
@@ -1180,4 +1173,4 @@ class AccountManagerDialog(tk.Toplevel):
 
 if __name__ == "__main__":
     app = BonusPickApp()
-    app.mainloop()
+    app._win.mainloop()

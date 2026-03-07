@@ -29,12 +29,21 @@ TIMEOUT = 15
 
 
 # ---------------------------------------------------------------------------
-# 내부 헬퍼
+# 예외 클래스
 # ---------------------------------------------------------------------------
 
 class AutoCancelled(Exception):
     """중지 버튼으로 자동 입력이 취소됐을 때 발생."""
 
+
+class LoginFailed(Exception):
+    """이메일/비밀번호 오류로 로그인에 실패했을 때 발생.
+    이 예외는 다음 사이트로 재시도하지 않고 즉시 상위로 전파된다."""
+
+
+# ---------------------------------------------------------------------------
+# 내부 헬퍼
+# ---------------------------------------------------------------------------
 
 def _chk(cancel_event) -> None:
     """cancel_event 가 set 되어 있으면 AutoCancelled 발생."""
@@ -123,8 +132,10 @@ _LOGIN_BTN_XPATH = (
 def _do_login(driver, wait, login_url: str, email: str, password: str, _st,
               cancel_event=None) -> None:
     """
-    로그인 URL 접속 → 이메일/비밀번호 입력 → 로그인 버튼 클릭(실패 시 Enter 폴백).
+    로그인 URL 접속 → 이메일/비밀번호 입력 → 로그인 버튼 클릭.
     세션이 이미 유지된 경우 로그인 단계를 생략한다.
+
+    로그인 실패(잘못된 비밀번호 등) 시 LoginFailed 발생.
     """
     _chk(cancel_event)
     _st("로그인 페이지 접속 중...")
@@ -214,19 +225,41 @@ def _do_login(driver, wait, login_url: str, email: str, password: str, _st,
             pw_input.send_keys(Keys.RETURN)
             _st("Enter 폴백 실행")
 
-    _st("페이지 전환 대기...")
-    try:
-        wait.until(lambda d: "login" not in d.current_url.lower())
-    except TimeoutException:
-        raise RuntimeError("로그인 후 페이지 전환 실패 — 이메일/비밀번호 확인 요망")
+    # ── 로그인 결과 폴링 ──────────────────────────────────────────
+    # URL에 'login'이 사라지면 성공, 3초 후에도 'login' 페이지에 머물면 실패.
+    _st("로그인 결과 확인 중...")
+    for attempt in range(40):  # 0.3s × 40 = 최대 12초
+        _chk(cancel_event)
+        time.sleep(0.3)
+        current = driver.current_url.lower()
+
+        if "login" not in current:
+            _st("로그인 성공 — URL 전환 확인")
+            return
+
+        # 3초(attempt=10) 이후에도 로그인 페이지 잔류 → 비밀번호 오류로 판단
+        if attempt >= 10:
+            raise LoginFailed(
+                f"로그인 실패 — 3초 후에도 로그인 페이지 잔류 ({email})"
+            )
+
+    # 루프 정상 종료(이론상 도달 불가)
+    raise LoginFailed(f"로그인 실패 — 타임아웃 ({email})")
 
 
 def _go_home(driver, wait, _st, cancel_event=None) -> None:
-    """현재 URL이 h5 홈이 아닌 경우 홈으로 이동 후 핵심 요소 대기."""
+    """현재 URL이 h5 홈이 아닌 경우에만 홈으로 이동.
+    이미 #/home 이면 건너뜀(미러 사이트 도메인 유지).
+    홈 이동 후 login 페이지로 리다이렉트되면 LoginFailed."""
     _chk(cancel_event)
+    # 이미 #/home 에 있으면 네비게이션 생략 — 미러사이트(dexvip.shop 등) 도메인 보존
     if PC_HOST in driver.current_url or "#/home" not in driver.current_url:
         _st("h5 홈으로 이동 중...")
         driver.get(HOME_URL)
+        time.sleep(1)
+        # 홈 이동 후 로그인 페이지로 튕긴 경우 → 세션 만료
+        if "login" in driver.current_url.lower():
+            raise LoginFailed("홈 이동 후 로그인 페이지로 리다이렉트 — 세션 만료")
         try:
             wait.until(EC.presence_of_element_located((By.XPATH,
                 f"//*[contains({_ci('text()')}, 'quickly buy')"
@@ -322,6 +355,7 @@ def submit_order_code(
     """
     지정 사이트에 로그인 후 코드 자동 입력.
     login_url이 리스트인 경우 실패 시 다음 URL로 순서대로 시도.
+    LoginFailed 발생 시 다음 사이트 시도 없이 즉시 예외 전파.
     """
     _chk(cancel_event)
 
@@ -351,9 +385,12 @@ def submit_order_code(
             return
         except AutoCancelled:
             raise
+        except LoginFailed:
+            # 비밀번호 오류 → 다음 사이트 시도 없이 즉시 상위로 전파
+            raise
         except Exception as e:
             last_error = e
-            _st(f"✗ 사이트 {idx+1} 실패: {e}")
+            _st(f"✗ 사이트 {idx+1} 실패: [{type(e).__name__}] {e}")
         finally:
             try:
                 driver.quit()
@@ -440,6 +477,7 @@ def click_no_more(
     """
     No more → Done/OK 흐름 실행.
     login_url이 리스트인 경우 실패 시 다음 URL로 순서대로 시도.
+    LoginFailed 발생 시 다음 사이트 시도 없이 즉시 예외 전파.
     """
     _chk(cancel_event)
 
@@ -469,9 +507,12 @@ def click_no_more(
             return
         except AutoCancelled:
             raise
+        except LoginFailed:
+            # 비밀번호 오류 → 다음 사이트 시도 없이 즉시 상위로 전파
+            raise
         except Exception as e:
             last_error = e
-            _st(f"✗ 사이트 {idx+1} 실패: {e}")
+            _st(f"✗ 사이트 {idx+1} 실패: [{type(e).__name__}] {e}")
         finally:
             try:
                 driver.quit()
