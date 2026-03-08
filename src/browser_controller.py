@@ -41,6 +41,11 @@ class LoginFailed(Exception):
     이 예외는 다음 사이트로 재시도하지 않고 즉시 상위로 전파된다."""
 
 
+class InvalidParameter(Exception):
+    """Confirm 후 Invalid parameter 팝업이 감지됐을 때 발생.
+    이 예외는 다음 사이트로 재시도하지 않고 즉시 상위로 전파된다."""
+
+
 # ---------------------------------------------------------------------------
 # 내부 헬퍼
 # ---------------------------------------------------------------------------
@@ -353,7 +358,7 @@ def _do_submit(driver, code: str, login_url: str, email: str, password: str, _st
             f"//*[contains({_ci('text()')}, 'invalid parameter')"
             f"  or contains({_ci('text()')}, 'invalid param')]"
         )))
-        raise RuntimeError("❌ Invalid parameter — 코드 제출 실패")
+        raise InvalidParameter("❌ Invalid parameter — 코드 제출 실패")
     except TimeoutException:
         pass  # 팝업 없음 = 정상
 
@@ -401,7 +406,8 @@ def submit_order_code(
         except AutoCancelled:
             raise
         except LoginFailed:
-            # 비밀번호 오류 → 다음 사이트 시도 없이 즉시 상위로 전파
+            raise
+        except InvalidParameter:
             raise
         except Exception as e:
             last_error = e
@@ -523,7 +529,8 @@ def click_no_more(
         except AutoCancelled:
             raise
         except LoginFailed:
-            # 비밀번호 오류 → 다음 사이트 시도 없이 즉시 상위로 전파
+            raise
+        except InvalidParameter:
             raise
         except Exception as e:
             last_error = e
