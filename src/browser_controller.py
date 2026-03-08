@@ -324,7 +324,7 @@ def _do_submit(driver, code: str, login_url: str, email: str, password: str, _st
         )))
         inp.clear()
         inp.send_keys(code)
-        time.sleep(1.0)
+        time.sleep(0.5)
     except TimeoutException:
         raise RuntimeError("코드 입력창을 찾을 수 없음")
 
@@ -344,7 +344,18 @@ def _do_submit(driver, code: str, login_url: str, email: str, password: str, _st
         ),
         label="confirm 버튼",
     )
-    time.sleep(0.5)
+    time.sleep(0.8)
+
+    # ── Step 7: Invalid parameter 팝업 감지 ──────────────────────
+    try:
+        WebDriverWait(driver, 2).until(EC.visibility_of_element_located((
+            By.XPATH,
+            f"//*[contains({_ci('text()')}, 'invalid parameter')"
+            f"  or contains({_ci('text()')}, 'invalid param')]"
+        )))
+        raise RuntimeError("❌ Invalid parameter — 코드 제출 실패")
+    except TimeoutException:
+        pass  # 팝업 없음 = 정상
 
 
 def submit_order_code(
