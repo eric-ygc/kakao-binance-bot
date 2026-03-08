@@ -56,29 +56,29 @@ STEPS = [
 # ---------------------------------------------------------------------------
 # Neumorphism 색상 팔레트
 # ---------------------------------------------------------------------------
-NEU_BG    = "#e0e5ec"
-NEU_LIGHT = "#ffffff"
-NEU_DARK  = "#a3b1c6"
+NEU_BG    = "#1e2130"
+NEU_LIGHT = "#2a2f47"
+NEU_DARK  = "#13151f"
 
 C = {
     "bg":        NEU_BG,
     "panel":     NEU_BG,
-    "panel2":    "#d1d9e6",
-    "input":     "#d1d9e6",
-    "border":    NEU_DARK,
-    "fg":        "#31344b",
-    "fg_dim":    "#9baacf",
-    "fg_bright": "#1a1d2e",
+    "panel2":    "#191c2a",
+    "input":     "#191c2a",
+    "border":    "#3a3f5c",
+    "fg":        "#c8cde4",
+    "fg_dim":    "#6b7280",
+    "fg_bright": "#e8ecf5",
     "accent":    "#5b86e5",
-    "yellow":    "#c87800",
-    "code_bg":   "#d1d9e6",
-    "log_bg":    "#d1d9e6",
+    "yellow":    "#f0b429",
+    "code_bg":   "#191c2a",
+    "log_bg":    "#191c2a",
     "start":     "#2e7d57",
     "start_hl":  "#3a9b6b",
     "stop":      "#b83232",
     "stop_hl":   "#d43c3c",
-    "sel":       "#b8c4d6",
-    "error":     "#c0392b",
+    "sel":       "#2e3a5c",
+    "error":     "#e74c3c",
     "ok":        "#27a06a",
     "system":    "#7f8c9a",
 }

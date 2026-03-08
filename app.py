@@ -56,29 +56,29 @@ logger = setup_logger("app")
 # ---------------------------------------------------------------------------
 # Neumorphism 색상 팔레트
 # ---------------------------------------------------------------------------
-NEU_BG    = "#e0e5ec"   # neumorphic base
-NEU_LIGHT = "#ffffff"   # highlight shadow (top-left)
-NEU_DARK  = "#a3b1c6"   # dark shadow (bottom-right)
+NEU_BG    = "#1e2130"   # neumorphic dark base
+NEU_LIGHT = "#2a2f47"   # highlight shadow (top-left)
+NEU_DARK  = "#13151f"   # dark shadow (bottom-right)
 
 C = {
     "bg":          NEU_BG,       # 메인 배경
     "panel":       NEU_BG,       # 카드 내부
-    "panel2":      "#d1d9e6",    # 서브 배경 (상태바 등)
-    "input":       "#d1d9e6",    # Entry 배경 (sunken)
-    "border":      NEU_DARK,     # 구분선
-    "fg":          "#31344b",    # 일반 텍스트
-    "fg_dim":      "#9baacf",    # 보조 텍스트
-    "fg_bright":   "#1a1d2e",    # 강조 텍스트
+    "panel2":      "#191c2a",    # 서브 배경 (상태바 등)
+    "input":       "#191c2a",    # Entry 배경 (sunken)
+    "border":      "#3a3f5c",    # 구분선
+    "fg":          "#c8cde4",    # 일반 텍스트
+    "fg_dim":      "#6b7280",    # 보조 텍스트
+    "fg_bright":   "#e8ecf5",    # 강조 텍스트
     "accent":      "#5b86e5",    # 블루 강조
-    "yellow":      "#c87800",    # 코드 색상 (앰버)
-    "code_bg":     "#d1d9e6",    # 코드 패널 배경
-    "log_bg":      "#d1d9e6",    # 로그 배경
+    "yellow":      "#f0b429",    # 코드 색상 (앰버)
+    "code_bg":     "#191c2a",    # 코드 패널 배경
+    "log_bg":      "#191c2a",    # 로그 배경
     "start":       "#2e7d57",    # 시작 버튼 (그린)
     "start_hl":    "#3a9b6b",
     "stop":        "#b83232",    # 중지 버튼 (레드)
     "stop_hl":     "#d43c3c",
-    "sel":         "#b8c4d6",    # 선택 색상
-    "error":       "#c0392b",
+    "sel":         "#2e3a5c",    # 선택 색상
+    "error":       "#e74c3c",
     "ok":          "#27a06a",
     "system":      "#7f8c9a",
 }
