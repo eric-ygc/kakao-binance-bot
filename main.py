@@ -16,6 +16,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from app import App
 from bonus_pick import BonusPickApp
+from version import VERSION
 
 NEU_BG    = "#eaeaea"
 NEU_DARK  = "#c8c8c8"
@@ -25,7 +26,7 @@ NEU_LIGHT = "#ffffff"
 class MainApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("픽보조")
+        self.title(f"픽보조 v{VERSION}")
         self.resizable(True, True)
         self.minsize(560, 680)
         self.configure(bg=NEU_BG)

@@ -26,6 +26,7 @@ sys.path.insert(0, str(BASE_DIR))
 from src.logger_config import setup_logger
 from src.message_monitor import run_monitor
 from src.message_parser import ChatMessage
+from version import VERSION
 
 try:
     from src.browser_controller import AutoCancelled, submit_order_code
@@ -115,7 +116,7 @@ class App(tk.Frame):
     def __init__(self, parent=None, shared_site_url_vars=None) -> None:
         if parent is None:
             self._win = tk.Tk()
-            self._win.title("고정픽")
+            self._win.title(f"고정픽 v{VERSION}")
             self._win.resizable(True, True)
             self._win.minsize(560, 680)
             self._win.configure(bg=C["bg"])

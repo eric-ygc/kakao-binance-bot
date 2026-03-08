@@ -22,6 +22,7 @@ else:
 sys.path.insert(0, str(BASE_DIR))
 
 from src.logger_config import setup_logger
+from version import VERSION
 
 try:
     from src.browser_controller import AutoCancelled, click_no_more
@@ -114,7 +115,7 @@ class BonusPickApp(tk.Frame):
     def __init__(self, parent=None, shared_site_url_vars=None) -> None:
         if parent is None:
             self._win = tk.Tk()
-            self._win.title("보너스픽")
+            self._win.title(f"보너스픽 v{VERSION}")
             self._win.resizable(True, True)
             self._win.minsize(580, 500)
             self._win.configure(bg=C["bg"])
