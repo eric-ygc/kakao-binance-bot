@@ -17,9 +17,9 @@ sys.path.insert(0, str(BASE_DIR))
 from app import App
 from bonus_pick import BonusPickApp
 
-NEU_BG    = "#1e2130"
-NEU_DARK  = "#13151f"
-NEU_LIGHT = "#2a2f47"
+NEU_BG    = "#eaeaea"
+NEU_DARK  = "#c8c8c8"
+NEU_LIGHT = "#ffffff"
 
 
 class MainApp(tk.Tk):
@@ -40,7 +40,7 @@ class MainApp(tk.Tk):
         )
         s.configure("TNotebook.Tab",
             background=NEU_BG,
-            foreground="#6b7280",
+            foreground="#888888",
             padding=(14, 7),
             font=("Segoe UI", 9, "bold"),
             borderwidth=3,
@@ -49,7 +49,7 @@ class MainApp(tk.Tk):
         )
         s.map("TNotebook.Tab",
             background=[("selected", NEU_BG)],
-            foreground=[("selected", "#5b86e5")],
+            foreground=[("selected", "#bb86fc")],
             lightcolor=[("selected", NEU_LIGHT)],
             darkcolor=[("selected", NEU_DARK)],
         )

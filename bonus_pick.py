@@ -56,31 +56,31 @@ STEPS = [
 # ---------------------------------------------------------------------------
 # Neumorphism 색상 팔레트
 # ---------------------------------------------------------------------------
-NEU_BG    = "#1e2130"
-NEU_LIGHT = "#2a2f47"
-NEU_DARK  = "#13151f"
+NEU_BG    = "#1e1e1e"
+NEU_LIGHT = "#2d2d2d"
+NEU_DARK  = "#0d0d0d"
 
 C = {
     "bg":        NEU_BG,
     "panel":     NEU_BG,
-    "panel2":    "#191c2a",
-    "input":     "#191c2a",
-    "border":    "#3a3f5c",
-    "fg":        "#c8cde4",
-    "fg_dim":    "#6b7280",
-    "fg_bright": "#e8ecf5",
-    "accent":    "#5b86e5",
+    "panel2":    "#121212",
+    "input":     "#2d2d2d",
+    "border":    "#3d3d3d",
+    "fg":        "#e0e0e0",
+    "fg_dim":    "#9e9e9e",
+    "fg_bright": "#ffffff",
+    "accent":    "#bb86fc",
     "yellow":    "#f0b429",
-    "code_bg":   "#191c2a",
-    "log_bg":    "#191c2a",
-    "start":     "#2e7d57",
-    "start_hl":  "#3a9b6b",
-    "stop":      "#b83232",
-    "stop_hl":   "#d43c3c",
-    "sel":       "#2e3a5c",
-    "error":     "#e74c3c",
-    "ok":        "#27a06a",
-    "system":    "#7f8c9a",
+    "code_bg":   "#121212",
+    "log_bg":    "#121212",
+    "start":     "#018786",
+    "start_hl":  "#03dac6",
+    "stop":      "#b00020",
+    "stop_hl":   "#cf6679",
+    "sel":       "#3d2d5c",
+    "error":     "#cf6679",
+    "ok":        "#03dac6",
+    "system":    "#9e9e9e",
 }
 
 # ---------------------------------------------------------------------------
@@ -214,24 +214,24 @@ class BonusPickApp(tk.Frame):
         )
         s.configure("Start.TButton",
             background=C["start"], foreground="#ffffff",
-            darkcolor="#1d5238", lightcolor="#52b88a",
+            darkcolor="#014d4d", lightcolor="#03dac6",
             relief="raised", borderwidth=4, font=("Segoe UI", 10, "bold"),
         )
         s.map("Start.TButton",
             relief=[("pressed", "sunken")],
-            darkcolor=[("pressed", "#52b88a")],
-            lightcolor=[("pressed", "#1d5238")],
+            darkcolor=[("pressed", "#03dac6")],
+            lightcolor=[("pressed", "#014d4d")],
             background=[("active", C["start_hl"]), ("pressed", C["start"])],
         )
         s.configure("Stop.TButton",
             background=C["stop"], foreground="#ffffff",
-            darkcolor="#7a1f1f", lightcolor="#e87070",
+            darkcolor="#6b0010", lightcolor="#cf6679",
             relief="raised", borderwidth=4, font=("Segoe UI", 9, "bold"),
         )
         s.map("Stop.TButton",
             relief=[("pressed", "sunken")],
-            darkcolor=[("pressed", "#e87070")],
-            lightcolor=[("pressed", "#7a1f1f")],
+            darkcolor=[("pressed", "#cf6679")],
+            lightcolor=[("pressed", "#6b0010")],
             background=[("active", C["stop_hl"]), ("pressed", C["stop"])],
         )
         s.configure("TScrollbar",

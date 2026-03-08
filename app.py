@@ -56,31 +56,31 @@ logger = setup_logger("app")
 # ---------------------------------------------------------------------------
 # Neumorphism 색상 팔레트
 # ---------------------------------------------------------------------------
-NEU_BG    = "#1e2130"   # neumorphic dark base
-NEU_LIGHT = "#2a2f47"   # highlight shadow (top-left)
-NEU_DARK  = "#13151f"   # dark shadow (bottom-right)
+NEU_BG    = "#1e1e1e"   # Material dark surface
+NEU_LIGHT = "#2d2d2d"   # subtle highlight
+NEU_DARK  = "#0d0d0d"   # subtle shadow
 
 C = {
     "bg":          NEU_BG,       # 메인 배경
     "panel":       NEU_BG,       # 카드 내부
-    "panel2":      "#191c2a",    # 서브 배경 (상태바 등)
-    "input":       "#191c2a",    # Entry 배경 (sunken)
-    "border":      "#3a3f5c",    # 구분선
-    "fg":          "#c8cde4",    # 일반 텍스트
-    "fg_dim":      "#6b7280",    # 보조 텍스트
-    "fg_bright":   "#e8ecf5",    # 강조 텍스트
-    "accent":      "#5b86e5",    # 블루 강조
+    "panel2":      "#121212",    # 서브 배경 (상태바 등)
+    "input":       "#2d2d2d",    # Entry 배경
+    "border":      "#3d3d3d",    # 구분선
+    "fg":          "#e0e0e0",    # 일반 텍스트
+    "fg_dim":      "#9e9e9e",    # 보조 텍스트
+    "fg_bright":   "#ffffff",    # 강조 텍스트
+    "accent":      "#bb86fc",    # Material purple
     "yellow":      "#f0b429",    # 코드 색상 (앰버)
-    "code_bg":     "#191c2a",    # 코드 패널 배경
-    "log_bg":      "#191c2a",    # 로그 배경
-    "start":       "#2e7d57",    # 시작 버튼 (그린)
-    "start_hl":    "#3a9b6b",
-    "stop":        "#b83232",    # 중지 버튼 (레드)
-    "stop_hl":     "#d43c3c",
-    "sel":         "#2e3a5c",    # 선택 색상
-    "error":       "#e74c3c",
-    "ok":          "#27a06a",
-    "system":      "#7f8c9a",
+    "code_bg":     "#121212",    # 코드 패널 배경
+    "log_bg":      "#121212",    # 로그 배경
+    "start":       "#018786",    # 시작 버튼 (teal)
+    "start_hl":    "#03dac6",
+    "stop":        "#b00020",    # 중지 버튼 (error red)
+    "stop_hl":     "#cf6679",
+    "sel":         "#3d2d5c",    # 선택 색상 (purple tint)
+    "error":       "#cf6679",
+    "ok":          "#03dac6",
+    "system":      "#9e9e9e",
 }
 
 
@@ -256,37 +256,37 @@ class App(tk.Frame):
             foreground=[("active", C["fg_bright"])],
         )
 
-        # 시작 버튼 (초록 neumorphic)
+        # 시작 버튼 (teal)
         s.configure("Start.TButton",
             background=C["start"],
             foreground="#ffffff",
-            darkcolor="#1d5238",
-            lightcolor="#52b88a",
+            darkcolor="#014d4d",
+            lightcolor="#03dac6",
             relief="raised",
             borderwidth=4,
             font=("Segoe UI", 9, "bold"),
         )
         s.map("Start.TButton",
             relief=[("pressed", "sunken")],
-            darkcolor=[("pressed", "#52b88a")],
-            lightcolor=[("pressed", "#1d5238")],
+            darkcolor=[("pressed", "#03dac6")],
+            lightcolor=[("pressed", "#014d4d")],
             background=[("active", C["start_hl"]), ("pressed", C["start"])],
         )
 
-        # 중지 버튼 (빨강 neumorphic)
+        # 중지 버튼 (error red)
         s.configure("Stop.TButton",
             background=C["stop"],
             foreground="#ffffff",
-            darkcolor="#7a1f1f",
-            lightcolor="#e87070",
+            darkcolor="#6b0010",
+            lightcolor="#cf6679",
             relief="raised",
             borderwidth=4,
             font=("Segoe UI", 9, "bold"),
         )
         s.map("Stop.TButton",
             relief=[("pressed", "sunken")],
-            darkcolor=[("pressed", "#e87070")],
-            lightcolor=[("pressed", "#7a1f1f")],
+            darkcolor=[("pressed", "#cf6679")],
+            lightcolor=[("pressed", "#6b0010")],
             background=[("active", C["stop_hl"]), ("pressed", C["stop"])],
         )
 
