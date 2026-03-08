@@ -53,6 +53,7 @@ DEFAULT_CONFIG = {
 
 CODE_PATTERN = re.compile(r'^[A-Za-z0-9]{9}$')
 logger = setup_logger("app")
+WORKERS = 3  # 병렬 워커 수
 
 # ---------------------------------------------------------------------------
 # Neumorphism 색상 팔레트
@@ -523,7 +524,9 @@ class App(tk.Frame):
         self._auto_var = tk.BooleanVar(value=cfg.get("auto_input", False))
         auto_chk = ttk.Checkbutton(cd, text="코드 캐치 시 자동으로 사이트에 입력",
                                    variable=self._auto_var)
-        auto_chk.grid(row=0, column=0, columnspan=4, sticky=tk.W, pady=(0, 6))
+        auto_chk.grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 6))
+        ttk.Label(cd, text=f"워커 {WORKERS}개", foreground=C["accent"],
+                  style="Panel.TLabel").grid(row=0, column=3, sticky=tk.W, padx=(8, 0), pady=(0, 6))
 
         if not SELENIUM_OK:
             ttk.Label(cd, text="⚠  selenium 미설치 — 자동 입력 불가",
@@ -917,7 +920,6 @@ class App(tk.Frame):
             return
 
         total = len(accounts)
-        WORKERS = 3
         self._msg_queue.put(("system", f"━━ 자동 입력 시작: {code} | 활성 계정 {total}개 (워커 {WORKERS}개 병렬) ━━"))
 
         results = {}  # index → ("ok"|"fail", message)
