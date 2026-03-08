@@ -906,6 +906,7 @@ class App(tk.Frame):
         ).start()
 
     def _run_auto_input(self, code: str, port: int, site_urls: list) -> None:
+        import concurrent.futures
         if self._auto_cancel_event.is_set():
             return
 
@@ -915,21 +916,17 @@ class App(tk.Frame):
             return
 
         total = len(accounts)
-        self._msg_queue.put(("system", f"━━ 자동 입력 시작: {code} | 활성 계정 {total}개 순차 처리 ━━"))
+        WORKERS = 3
+        self._msg_queue.put(("system", f"━━ 자동 입력 시작: {code} | 활성 계정 {total}개 (워커 {WORKERS}개 병렬) ━━"))
 
-        success_count = 0
-        fail_count = 0
+        results = {}  # index → ("ok"|"fail", message)
 
-        for i, acct in enumerate(accounts):
-            if self._auto_cancel_event.is_set():
-                self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
-                return
-
+        def _process(i: int, acct: dict) -> None:
             acct_label = f"[{i+1}/{total}] {acct['email']}"
             self._msg_queue.put(("system", f"→ {acct_label} 처리 중..."))
 
             def _status(msg: str) -> None:
-                self._msg_queue.put(("system", f"  · {msg}"))
+                self._msg_queue.put(("system", f"  · [{i+1}] {msg}"))
 
             try:
                 submit_order_code(
@@ -939,15 +936,24 @@ class App(tk.Frame):
                     status_cb=_status,
                     cancel_event=self._auto_cancel_event,
                 )
+                results[i] = ("ok", acct_label)
                 self._msg_queue.put(("auto_ok", f"✓ 완료: {acct_label}"))
-                success_count += 1
             except AutoCancelled:
-                self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
-                return
+                results[i] = ("cancel", acct_label)
             except Exception as e:
+                results[i] = ("fail", acct_label)
                 self._msg_queue.put(("error", f"✗ 실패: {acct_label} [{type(e).__name__}] — {e}"))
-                fail_count += 1
 
+        with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as pool:
+            futures = [pool.submit(_process, i, acct) for i, acct in enumerate(accounts)]
+            concurrent.futures.wait(futures)
+
+        if any(v[0] == "cancel" for v in results.values()):
+            self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
+            return
+
+        success_count = sum(1 for v in results.values() if v[0] == "ok")
+        fail_count    = sum(1 for v in results.values() if v[0] == "fail")
         tag = "auto_ok" if fail_count == 0 else "system"
         self._msg_queue.put((
             tag,
