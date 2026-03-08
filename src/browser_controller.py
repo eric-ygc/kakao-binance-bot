@@ -351,16 +351,33 @@ def _do_submit(driver, code: str, login_url: str, email: str, password: str, _st
     )
     time.sleep(0.8)
 
-    # ── Step 7: Invalid parameter 팝업 감지 ──────────────────────
-    try:
-        WebDriverWait(driver, 2).until(EC.visibility_of_element_located((
-            By.XPATH,
-            f"//*[contains({_ci('text()')}, 'invalid parameter')"
-            f"  or contains({_ci('text()')}, 'invalid param')]"
-        )))
-        raise InvalidParameter("❌ Invalid parameter — 코드 제출 실패")
-    except TimeoutException:
-        pass  # 팝업 없음 = 정상
+    # ── Step 7: 결과 팝업 감지 (Success / Invalid parameter) ─────
+    _st("결과 확인 중...")
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        _chk(cancel_event)
+        try:
+            els = driver.find_elements(By.XPATH,
+                f"//*[contains({_ci('text()')}, 'success')]"
+            )
+            if els:
+                _st("✓ Success 팝업 확인")
+                return
+        except Exception:
+            pass
+        try:
+            els = driver.find_elements(By.XPATH,
+                f"//*[contains({_ci('text()')}, 'invalid parameter')"
+                f"  or contains({_ci('text()')}, 'invalid param')]"
+            )
+            if els:
+                raise InvalidParameter("❌ Invalid parameter — 코드 제출 실패")
+        except InvalidParameter:
+            raise
+        except Exception:
+            pass
+        time.sleep(0.3)
+    _st("팝업 미감지 — 성공으로 간주")
 
 
 def submit_order_code(
