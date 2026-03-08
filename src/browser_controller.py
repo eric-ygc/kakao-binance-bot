@@ -324,7 +324,7 @@ def _do_submit(driver, code: str, login_url: str, email: str, password: str, _st
         )))
         inp.clear()
         inp.send_keys(code)
-        time.sleep(0.5)
+        time.sleep(1.0)
     except TimeoutException:
         raise RuntimeError("코드 입력창을 찾을 수 없음")
 
@@ -336,6 +336,10 @@ def _do_submit(driver, code: str, login_url: str, email: str, password: str, _st
             f"//*["
             f"  contains({_ci('text()')}, 'confirm')"
             f"  or contains({_ci('text()')}, 'cunfim')"
+            f"  or contains({_ci('text()')}, 'submit')"
+            f"  or contains({_ci('text()')}, 'ok')"
+            f"  or contains({_ci('text()')}, '확인')"
+            f"  or contains({_ci('text()')}, 'send')"
             f"]"
         ),
         label="confirm 버튼",
