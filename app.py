@@ -53,7 +53,8 @@ DEFAULT_CONFIG = {
 
 CODE_PATTERN = re.compile(r'^[A-Za-z0-9]{9}$')
 logger = setup_logger("app")
-WORKERS = 3  # 병렬 워커 수
+WORKERS = 2        # 병렬 워커 수
+STAGGER_DELAY = 3  # 워커 시작 간격 (초) — 동시 접속 IP 차단 방지
 
 # ---------------------------------------------------------------------------
 # Neumorphism 색상 팔레트
@@ -585,6 +586,7 @@ class App(tk.Frame):
             row=7, column=3, sticky=tk.E, pady=(8, 2))
         self._update_current_acct_label()
 
+
         # ─── 메시지 로그 카드 ──────────────────────────────────────────
         ce = self._make_card(main, "메시지 로그")
         ce._outer.pack(fill=tk.BOTH, expand=True)
@@ -702,6 +704,7 @@ class App(tk.Frame):
             self.after(0, self._update_current_acct_label)
             save_config(self._get_current_config())
 
+
     # ------------------------------------------------------------------
     # 제어
     # ------------------------------------------------------------------
@@ -758,7 +761,9 @@ class App(tk.Frame):
         self._check_monitor_schedule()
 
     def _check_monitor_schedule(self) -> None:
-        now = datetime.datetime.now().strftime("%H:%M")
+        now_dt = datetime.datetime.now()
+        today  = now_dt.strftime("%Y-%m-%d")
+        now    = now_dt.strftime("%H:%M")
         is_running = (self._stop_event is not None and
                       not self._stop_event.is_set())
 
@@ -769,7 +774,7 @@ class App(tk.Frame):
             stop_t  = stv.get().strip()
 
             if start_t and start_t == now and not is_running:
-                key = f"start-{now}-{i}"
+                key = f"start-{today}-{now}-{i}"
                 if self._last_sched_action[i] != key:
                     self._last_sched_action[i] = key
                     self._append_log(f"⏰ 예약 시작: {now}", tag="system")
@@ -777,7 +782,7 @@ class App(tk.Frame):
                     is_running = True
 
             if stop_t and stop_t == now and is_running:
-                key = f"stop-{now}-{i}"
+                key = f"stop-{today}-{now}-{i}"
                 if self._last_sched_action[i] != key:
                     self._last_sched_action[i] = key
                     self._append_log(f"⏰ 예약 종료: {now}", tag="system")
@@ -867,6 +872,12 @@ class App(tk.Frame):
 
         if is_code:
             self._update_catch_panel(code, msg.timestamp_str, msg.sender)
+            # 코드 추출 성공 → 카카오톡 모니터 즉시 중단
+            if self._stop_event and not self._stop_event.is_set():
+                self._stop_event.set()
+                self._start_btn.config(state=tk.NORMAL)
+                self._stop_btn.config(state=tk.DISABLED)
+                self._append_log("── 코드 감지로 모니터링 자동 중지 ──", tag="system")
 
     def _update_catch_panel(self, code: str, ts: str, sender: str) -> None:
         self._caught_codes_full.append({
@@ -948,7 +959,12 @@ class App(tk.Frame):
                 self._msg_queue.put(("error", f"✗ 실패: {acct_label} [{type(e).__name__}] — {e}"))
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as pool:
-            futures = [pool.submit(_process, i, acct) for i, acct in enumerate(accounts)]
+            import time as _time
+            futures = []
+            for i, acct in enumerate(accounts):
+                futures.append(pool.submit(_process, i, acct))
+                if i < WORKERS - 1:  # 첫 배치만 간격 두고 시작
+                    _time.sleep(STAGGER_DELAY)
             concurrent.futures.wait(futures)
 
         if any(v[0] == "cancel" for v in results.values()):
@@ -1159,6 +1175,7 @@ class AccountManagerDialog(tk.Toplevel):
                   text="  ☑ 클릭 → 사용/미사용 전환    ✕ 클릭 → 삭제    더블클릭 → 수정",
                   foreground=C["fg_dim"],
                   font=("Segoe UI", 8)).pack(padx=10, pady=(8, 2), anchor=tk.W)
+        self._all_enabled_var = tk.BooleanVar(value=True)
 
         tree_frame = ttk.Frame(self)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=4)
@@ -1196,10 +1213,11 @@ class AccountManagerDialog(tk.Toplevel):
                    command=self._add).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_frame, text="수정",
                    command=self._edit).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_frame, text="전체 선택",
-                   command=self._enable_all).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_frame, text="전체 해제",
-                   command=self._disable_all).pack(side=tk.LEFT, padx=3)
+        ttk.Separator(btn_frame, orient=tk.VERTICAL).pack(
+            side=tk.LEFT, fill=tk.Y, padx=8)
+        ttk.Checkbutton(btn_frame, text="전체 사용",
+                        variable=self._all_enabled_var,
+                        command=self._toggle_all_enabled).pack(side=tk.LEFT, padx=3)
         ttk.Separator(btn_frame, orient=tk.VERTICAL).pack(
             side=tk.LEFT, fill=tk.Y, padx=8)
         ttk.Button(btn_frame, text="엑셀 불러오기",
@@ -1233,6 +1251,13 @@ class AccountManagerDialog(tk.Toplevel):
             self._tree.selection_set(str(self._current_idx))
             self._tree.see(str(self._current_idx))
 
+        # 전체 선택 체크박스 동기화
+        if self._accounts:
+            all_on = all(a.get("enabled", True) for a in self._accounts)
+            self._all_enabled_var.set(all_on)
+        else:
+            self._all_enabled_var.set(True)
+
     def _on_tree_click(self, event) -> None:
         if self._tree.identify_region(event.x, event.y) != "cell":
             return
@@ -1264,6 +1289,12 @@ class AccountManagerDialog(tk.Toplevel):
         self._accounts.pop(idx)
         if self._current_idx >= len(self._accounts):
             self._current_idx = max(0, len(self._accounts) - 1)
+        self._refresh_list()
+
+    def _toggle_all_enabled(self) -> None:
+        state = self._all_enabled_var.get()
+        for a in self._accounts:
+            a["enabled"] = state
         self._refresh_list()
 
     def _enable_all(self) -> None:

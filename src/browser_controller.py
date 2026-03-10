@@ -233,7 +233,7 @@ def _do_login(driver, wait, login_url: str, email: str, password: str, _st,
     # ── 로그인 결과 폴링 ──────────────────────────────────────────
     # URL에 'login'이 사라지면 성공, 3초 후에도 'login' 페이지에 머물면 실패.
     _st("로그인 결과 확인 중...")
-    for attempt in range(40):  # 0.3s × 40 = 최대 12초
+    for attempt in range(50):  # 0.3s × 50 = 최대 15초
         _chk(cancel_event)
         time.sleep(0.3)
         current = driver.current_url.lower()
@@ -242,10 +242,10 @@ def _do_login(driver, wait, login_url: str, email: str, password: str, _st,
             _st("로그인 성공 — URL 전환 확인")
             return
 
-        # 3초(attempt=10) 이후에도 로그인 페이지 잔류 → 비밀번호 오류로 판단
-        if attempt >= 10:
+        # 10초(attempt=33) 이후에도 로그인 페이지 잔류 → 비밀번호 오류로 판단
+        if attempt >= 33:
             raise LoginFailed(
-                f"로그인 실패 — 3초 후에도 로그인 페이지 잔류 ({email})"
+                f"로그인 실패 — 10초 후에도 로그인 페이지 잔류 ({email})"
             )
 
     # 루프 정상 종료(이론상 도달 불가)
