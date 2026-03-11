@@ -55,7 +55,7 @@ DEFAULT_CONFIG = {
 
 CODE_PATTERN = re.compile(r'^[A-Za-z0-9]{9}$')
 logger = setup_logger("app")
-STAGGER_DELAY = 3  # 워커 시작 간격 (초) — 동시 접속 IP 차단 방지
+STAGGER_DELAY = 1  # 워커 시작 간격 (초) — 동시 접속 IP 차단 방지
 
 # ---------------------------------------------------------------------------
 # Neumorphism 색상 팔레트
