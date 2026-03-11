@@ -483,12 +483,12 @@ def _do_no_more(driver, login_url: str, email: str, password: str, _st,
     )
     time.sleep(1.5)
 
-    # ── Step 5: No more 클릭 ─────────────────────────────────────
+    # ── Step 5: Confirm to follow the order 클릭 ─────────────────
     _chk(cancel_event)
-    _st("No more 클릭 중...")
+    _st("Confirm to follow the order 클릭 중...")
     _click(driver, wait,
-        xpath=f"//*[contains({_ci('text()')}, 'no more')]",
-        label="No more",
+        xpath=f"//*[contains({_ci('text()')}, 'confirm to follow')]",
+        label="Confirm to follow the order",
     )
     time.sleep(1.5)
 
@@ -505,7 +505,18 @@ def _do_no_more(driver, login_url: str, email: str, password: str, _st,
         label="Done/OK 버튼",
     )
     time.sleep(0.5)
-    _st("완료!")
+
+    # ── Step 7: "Already followed the order" 팝업 확인 ──────────
+    _chk(cancel_event)
+    _st("완료 팝업 대기 중...")
+    try:
+        wait.until(EC.presence_of_element_located((
+            By.XPATH,
+            f"//*[contains({_ci('text()')}, 'already followed')]",
+        )))
+        _st("✓ Already followed the order — 완료!")
+    except TimeoutException:
+        raise RuntimeError("완료 팝업(Already followed the order)이 나타나지 않았습니다.")
 
 
 def click_no_more(

@@ -139,6 +139,7 @@ class App(tk.Frame):
         self._processed_codes: set = set()
         self._monitor_schedules: list = []   # [(enabled_var, start_var, stop_var), ...]
         self._last_sched_action: list = ["", ""]  # 중복 실행 방지
+        self._auto_input_active: bool = False    # 자동입력 실행 중 여부
 
         cfg = load_config()
         self._accounts: list = list(cfg.get("accounts", []))
@@ -867,15 +868,26 @@ class App(tk.Frame):
                     self._handle_message(item)
                 elif isinstance(item, tuple):
                     tag, text = item
-                    self._append_log(text, tag=tag)
+                    if tag == "__auto_start__":
+                        self._auto_input_active = True
+                        self._stop_btn.config(state=tk.NORMAL)
+                    elif tag == "__auto_end__":
+                        self._auto_input_active = False
+                        # 모니터도 중지된 경우에만 stop 버튼 비활성화
+                        if self._stop_event is None or self._stop_event.is_set():
+                            self._stop_btn.config(state=tk.DISABLED)
+                    else:
+                        self._append_log(text, tag=tag)
                 elif isinstance(item, str):
                     self._append_log(item, tag="system")
         except queue.Empty:
             pass
 
+        # 모니터 스레드가 종료됐고 자동입력도 없을 때 버튼 상태 복구
         if (self._monitor_thread is not None
                 and not self._monitor_thread.is_alive()
-                and self._stop_btn["state"] == tk.NORMAL):
+                and self._stop_btn["state"] == tk.NORMAL
+                and not self._auto_input_active):
             self._start_btn.config(state=tk.NORMAL)
             self._stop_btn.config(state=tk.DISABLED)
             self._status_var.set("모니터링 종료")
@@ -920,7 +932,9 @@ class App(tk.Frame):
             if self._stop_event and not self._stop_event.is_set():
                 self._stop_event.set()
                 self._start_btn.config(state=tk.NORMAL)
-                self._stop_btn.config(state=tk.DISABLED)
+                # 자동입력 실행 중이면 중지 버튼 유지 (취소 가능하도록)
+                if not self._auto_input_active:
+                    self._stop_btn.config(state=tk.DISABLED)
                 self._append_log("── 코드 감지로 모니터링 자동 중지 ──", tag="system")
 
     def _update_catch_panel(self, code: str, ts: str, sender: str) -> None:
@@ -969,75 +983,83 @@ class App(tk.Frame):
         if self._auto_cancel_event.is_set():
             return
 
-        accounts = [a for a in self._accounts if a.get("enabled", True)]
-        if not accounts:
-            self._msg_queue.put(("error", "⚠ 활성화된 계정이 없습니다. 계정 관리에서 ☑ 체크하세요."))
-            return
+        # GUI에 자동입력 시작 알림 (중지 버튼 활성 유지)
+        self._msg_queue.put(("__auto_start__", ""))
 
         try:
-            workers = max(1, min(10, int(self._workers_var.get())))
-        except ValueError:
-            workers = 2
-
-        total = len(accounts)
-        self._msg_queue.put(("system", f"━━ 자동 입력 시작: {code} | 활성 계정 {total}개 (워커 {workers}개 병렬) ━━"))
-
-        results = {}  # index → ("ok"|"fail", message)
-
-        # 프록시 풀 → 워커에 round-robin 배분, 없으면 계정 자체 프록시 사용
-        proxy_pool = [p.strip() for p in self._proxies if p.strip()]
-
-        def _process(i: int, acct: dict) -> None:
-            acct_label = f"[{i+1}/{total}] {acct['email']}"
-            if proxy_pool:
-                proxy = proxy_pool[i % len(proxy_pool)]
-            else:
-                proxy = acct.get("proxy", "").strip()
-            if proxy:
-                self._msg_queue.put(("system", f"→ {acct_label} 처리 중... (IP: {proxy})"))
-            else:
-                self._msg_queue.put(("system", f"→ {acct_label} 처리 중..."))
-
-            def _status(msg: str) -> None:
-                self._msg_queue.put(("system", f"  · [{i+1}] {msg}"))
+            accounts = [a for a in self._accounts if a.get("enabled", True)]
+            if not accounts:
+                self._msg_queue.put(("error", "⚠ 활성화된 계정이 없습니다. 계정 관리에서 ☑ 체크하세요."))
+                return
 
             try:
-                submit_order_code(
-                    code, port, site_urls,
-                    email=acct["email"],
-                    password=acct["password"],
-                    status_cb=_status,
-                    cancel_event=self._auto_cancel_event,
-                    proxy=proxy,
-                )
-                results[i] = ("ok", acct_label)
-                self._msg_queue.put(("auto_ok", f"✓ 완료: {acct_label}"))
-            except AutoCancelled:
-                results[i] = ("cancel", acct_label)
-            except Exception as e:
-                results[i] = ("fail", acct_label)
-                self._msg_queue.put(("error", f"✗ 실패: {acct_label} [{type(e).__name__}] — {e}"))
+                workers = max(1, min(10, int(self._workers_var.get())))
+            except ValueError:
+                workers = 2
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-            import time as _time
-            futures = []
-            for i, acct in enumerate(accounts):
-                futures.append(pool.submit(_process, i, acct))
-                if i < workers - 1:  # 첫 배치만 간격 두고 시작
-                    _time.sleep(STAGGER_DELAY)
-            concurrent.futures.wait(futures)
+            total = len(accounts)
+            self._msg_queue.put(("system", f"━━ 자동 입력 시작: {code} | 활성 계정 {total}개 (워커 {workers}개 병렬) ━━"))
 
-        if any(v[0] == "cancel" for v in results.values()):
-            self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
-            return
+            results = {}  # index → ("ok"|"fail", message)
 
-        success_count = sum(1 for v in results.values() if v[0] == "ok")
-        fail_count    = sum(1 for v in results.values() if v[0] == "fail")
-        tag = "auto_ok" if fail_count == 0 else "system"
-        self._msg_queue.put((
-            tag,
-            f"━━ 전체 완료: {code} | 성공 {success_count} / 실패 {fail_count} / 총 {total} ━━",
-        ))
+            # 프록시 풀 → 워커에 round-robin 배분, 없으면 계정 자체 프록시 사용
+            proxy_pool = [p.strip() for p in self._proxies if p.strip()]
+
+            def _process(i: int, acct: dict) -> None:
+                acct_label = f"[{i+1}/{total}] {acct['email']}"
+                if proxy_pool:
+                    proxy = proxy_pool[i % len(proxy_pool)]
+                else:
+                    proxy = acct.get("proxy", "").strip()
+                if proxy:
+                    self._msg_queue.put(("system", f"→ {acct_label} 처리 중... (IP: {proxy})"))
+                else:
+                    self._msg_queue.put(("system", f"→ {acct_label} 처리 중..."))
+
+                def _status(msg: str) -> None:
+                    self._msg_queue.put(("system", f"  · [{i+1}] {msg}"))
+
+                try:
+                    submit_order_code(
+                        code, port, site_urls,
+                        email=acct["email"],
+                        password=acct["password"],
+                        status_cb=_status,
+                        cancel_event=self._auto_cancel_event,
+                        proxy=proxy,
+                    )
+                    results[i] = ("ok", acct_label)
+                    self._msg_queue.put(("auto_ok", f"✓ 완료: {acct_label}"))
+                except AutoCancelled:
+                    results[i] = ("cancel", acct_label)
+                except Exception as e:
+                    results[i] = ("fail", acct_label)
+                    self._msg_queue.put(("error", f"✗ 실패: {acct_label} [{type(e).__name__}] — {e}"))
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = []
+                for i, acct in enumerate(accounts):
+                    futures.append(pool.submit(_process, i, acct))
+                    if i < workers - 1:  # 첫 배치만 간격 두고 시작
+                        # 취소 이벤트 대기 (최대 STAGGER_DELAY초) — 취소 즉시 반응
+                        if self._auto_cancel_event.wait(STAGGER_DELAY):
+                            break
+                concurrent.futures.wait(futures)
+
+            if any(v[0] == "cancel" for v in results.values()):
+                self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
+                return
+
+            success_count = sum(1 for v in results.values() if v[0] == "ok")
+            fail_count    = sum(1 for v in results.values() if v[0] == "fail")
+            tag = "auto_ok" if fail_count == 0 else "system"
+            self._msg_queue.put((
+                tag,
+                f"━━ 전체 완료: {code} | 성공 {success_count} / 실패 {fail_count} / 총 {total} ━━",
+            ))
+        finally:
+            # GUI에 자동입력 종료 알림
+            self._msg_queue.put(("__auto_end__", ""))
 
     # ------------------------------------------------------------------
     # 로그 출력
