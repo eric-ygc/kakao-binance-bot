@@ -46,6 +46,7 @@ DEFAULT_CONFIG = {
     "site_urls": ["https://dsj44.com/h5/#/login", "", "", "", "", "", "", "", "", ""],
     "accounts": [],
     "account_index": 0,
+    "proxies": [],
     "monitor_schedules": [
         {"enabled": False, "start": "", "stop": ""},
         {"enabled": False, "start": "", "stop": ""},
@@ -144,6 +145,7 @@ class App(tk.Frame):
         self._account_idx: int = int(cfg.get("account_index", 0))
         if self._account_idx >= len(self._accounts):
             self._account_idx = 0
+        self._proxies: list = list(cfg.get("proxies", []))
 
         self._apply_dark_theme()
         self._build_ui(cfg)
@@ -594,6 +596,18 @@ class App(tk.Frame):
         ttk.Button(cd, text="계정 관리",
                    command=self._open_account_manager).grid(
             row=7, column=3, sticky=tk.E, pady=(8, 2))
+
+        ttk.Label(cd, text="프록시 IP", style="Panel.TLabel").grid(
+            row=8, column=0, sticky=tk.W, pady=(4, 2))
+        self._proxy_info_var = tk.StringVar()
+        self._update_proxy_label()
+        ttk.Label(cd, textvariable=self._proxy_info_var,
+                  style="Panel.TLabel",
+                  foreground=C["accent"]).grid(
+            row=8, column=1, columnspan=2, sticky=tk.W, padx=(6, 0), pady=(4, 2))
+        ttk.Button(cd, text="IP 관리",
+                   command=self._open_proxy_manager).grid(
+            row=8, column=3, sticky=tk.E, pady=(4, 2))
         self._update_current_acct_label()
 
 
@@ -654,6 +668,7 @@ class App(tk.Frame):
             "site_urls": [v.get().strip() for v in self._site_url_vars],
             "accounts": self._accounts,
             "account_index": self._account_idx,
+            "proxies": self._proxies,
             "monitor_schedules": [
                 {"enabled": bool(ev.get()),
                  "start": sv.get().strip(),
@@ -703,6 +718,20 @@ class App(tk.Frame):
 
         messagebox.showinfo("접속 테스트", f"{len(pairs)}개 사이트 접속 테스트 중...\n완료되면 결과 팝업이 표시됩니다.")
         threading.Thread(target=_run, daemon=True).start()
+
+    def _update_proxy_label(self) -> None:
+        n = len([p for p in self._proxies if p.strip()])
+        if n == 0:
+            self._proxy_info_var.set("등록된 IP 없음 — 기본 IP로 접속")
+        else:
+            self._proxy_info_var.set(f"총 {n}개 IP 등록 | 워커별 자동 배분")
+
+    def _open_proxy_manager(self) -> None:
+        def on_save(proxies):
+            self._proxies = proxies
+            self._update_proxy_label()
+            save_config(self._get_current_config())
+        ProxyManagerDialog(self, self._proxies, on_save)
 
     def _open_account_manager(self) -> None:
         def on_save(accounts, current_idx):
@@ -955,11 +984,17 @@ class App(tk.Frame):
 
         results = {}  # index → ("ok"|"fail", message)
 
+        # 프록시 풀 → 워커에 round-robin 배분, 없으면 계정 자체 프록시 사용
+        proxy_pool = [p.strip() for p in self._proxies if p.strip()]
+
         def _process(i: int, acct: dict) -> None:
             acct_label = f"[{i+1}/{total}] {acct['email']}"
-            proxy = acct.get("proxy", "").strip()
+            if proxy_pool:
+                proxy = proxy_pool[i % len(proxy_pool)]
+            else:
+                proxy = acct.get("proxy", "").strip()
             if proxy:
-                self._msg_queue.put(("system", f"→ {acct_label} 처리 중... (프록시: {proxy})"))
+                self._msg_queue.put(("system", f"→ {acct_label} 처리 중... (IP: {proxy})"))
             else:
                 self._msg_queue.put(("system", f"→ {acct_label} 처리 중..."))
 
@@ -1183,6 +1218,122 @@ class _AccountEditDialog(tk.Toplevel):
             "proxy":    self._vars["proxy"].get().strip(),
             "enabled":  self._enabled_var.get(),
         }
+        self.destroy()
+
+
+class ProxyManagerDialog(tk.Toplevel):
+    def __init__(self, parent, proxies: list, on_save) -> None:
+        super().__init__(parent)
+        self.title("프록시 IP 관리")
+        self.resizable(True, True)
+        self.minsize(480, 400)
+        self.configure(bg=C["bg"])
+        self.grab_set()
+        self._proxies: list = list(proxies)
+        self._on_save = on_save
+        self._build_ui()
+        self._refresh()
+
+    def _build_ui(self) -> None:
+        ttk.Label(self,
+                  text="  워커 순서대로 자동 배분  |  형식: http://ip:port  또는  http://user:pw@ip:port",
+                  foreground=C["fg_dim"], font=("Segoe UI", 8)).pack(
+            padx=10, pady=(8, 2), anchor=tk.W)
+
+        list_frame = tk.Frame(self, bg=C["bg"])
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=4)
+
+        sb = ttk.Scrollbar(list_frame)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+        self._listbox = tk.Listbox(
+            list_frame, yscrollcommand=sb.set,
+            bg=C["input"], fg=C["fg"], selectbackground=C["sel"],
+            selectforeground=C["fg_bright"], font=("Consolas", 10),
+            activestyle="none", relief=tk.FLAT, bd=0,
+        )
+        sb.config(command=self._listbox.yview)
+        self._listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # 입력 행
+        entry_frame = tk.Frame(self, bg=C["bg"])
+        entry_frame.pack(fill=tk.X, padx=10, pady=(0, 4))
+        self._entry_var = tk.StringVar()
+        tk.Entry(entry_frame, textvariable=self._entry_var,
+                 bg=C["input"], fg=C["fg"], insertbackground=C["fg"],
+                 relief=tk.FLAT, font=("Consolas", 10)).pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
+        ttk.Button(entry_frame, text="추가",
+                   command=self._add_one).pack(side=tk.LEFT)
+        self.bind("<Return>", lambda e: self._add_one())
+
+        # 버튼 행
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(padx=10, pady=(0, 10))
+        ttk.Button(btn_frame, text="선택 삭제",
+                   command=self._delete_selected).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="전체 삭제",
+                   command=self._clear_all).pack(side=tk.LEFT, padx=3)
+        ttk.Separator(btn_frame, orient=tk.VERTICAL).pack(
+            side=tk.LEFT, fill=tk.Y, padx=8)
+        ttk.Button(btn_frame, text="파일 불러오기",
+                   command=self._import_file).pack(side=tk.LEFT, padx=3)
+        ttk.Separator(btn_frame, orient=tk.VERTICAL).pack(
+            side=tk.LEFT, fill=tk.Y, padx=8)
+        ttk.Button(btn_frame, text="저장 후 닫기", style="Start.TButton",
+                   command=self._save_close).pack(side=tk.LEFT, padx=3)
+
+    def _refresh(self) -> None:
+        self._listbox.delete(0, tk.END)
+        for i, p in enumerate(self._proxies):
+            self._listbox.insert(tk.END, f"  {i+1:>3}.  {p}")
+
+    def _add_one(self) -> None:
+        val = self._entry_var.get().strip()
+        if not val:
+            return
+        for line in val.splitlines():
+            line = line.strip()
+            if line and line not in self._proxies:
+                self._proxies.append(line)
+        self._entry_var.set("")
+        self._refresh()
+
+    def _delete_selected(self) -> None:
+        sel = list(self._listbox.curselection())
+        for i in reversed(sel):
+            del self._proxies[i]
+        self._refresh()
+
+    def _clear_all(self) -> None:
+        if not messagebox.askyesno("전체 삭제", "등록된 IP를 모두 삭제하시겠습니까?", parent=self):
+            return
+        self._proxies.clear()
+        self._refresh()
+
+    def _import_file(self) -> None:
+        path = filedialog.askopenfilename(
+            filetypes=[("텍스트 파일", "*.txt"), ("모든 파일", "*.*")],
+            title="IP 목록 파일 선택 (한 줄에 하나씩)",
+            parent=self,
+        )
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8") as f:
+                lines = [l.strip() for l in f if l.strip()]
+        except Exception as e:
+            messagebox.showerror("불러오기 실패", str(e), parent=self)
+            return
+        added = 0
+        for line in lines:
+            if line not in self._proxies:
+                self._proxies.append(line)
+                added += 1
+        self._refresh()
+        messagebox.showinfo("완료", f"IP {added}개를 불러왔습니다.", parent=self)
+
+    def _save_close(self) -> None:
+        self._on_save(self._proxies)
         self.destroy()
 
 
