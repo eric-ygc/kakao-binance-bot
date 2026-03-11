@@ -55,7 +55,7 @@ DEFAULT_CONFIG = {
 
 CODE_PATTERN = re.compile(r'^[A-Za-z0-9]{9}$')
 logger = setup_logger("app")
-STAGGER_DELAY = 5  # 워커 시작 간격 (초) — 동시 접속 IP 차단 방지
+STAGGER_DELAY = 10  # 워커 시작 간격 (초) — 동시 접속 IP 차단 방지
 
 # ---------------------------------------------------------------------------
 # Neumorphism 색상 팔레트
@@ -535,7 +535,7 @@ class App(tk.Frame):
         ttk.Label(wf, text="워커 수", foreground=C["accent"],
                   style="Panel.TLabel").pack(side=tk.LEFT)
         self._workers_var = tk.StringVar(value=str(cfg.get("workers", 2)))
-        tk.Spinbox(wf, from_=1, to=10, textvariable=self._workers_var,
+        tk.Spinbox(wf, from_=1, to=30, textvariable=self._workers_var,
                    width=3, font=("Segoe UI", 9),
                    bg=C["input"], fg=C["accent"], buttonbackground=C["bg"],
                    relief=tk.FLAT).pack(side=tk.LEFT, padx=(4, 2))
@@ -656,7 +656,7 @@ class App(tk.Frame):
         except ValueError:
             chrome_port = 9222
         try:
-            workers = max(1, min(10, int(self._workers_var.get())))
+            workers = max(1, min(30, int(self._workers_var.get())))
         except ValueError:
             workers = 2
         return {
@@ -993,7 +993,7 @@ class App(tk.Frame):
                 return
 
             try:
-                workers = max(1, min(10, int(self._workers_var.get())))
+                workers = max(1, min(30, int(self._workers_var.get())))
             except ValueError:
                 workers = 2
 
@@ -1040,7 +1040,7 @@ class App(tk.Frame):
                 futures = []
                 for i, acct in enumerate(accounts):
                     futures.append(pool.submit(_process, i, acct))
-                    if i < workers - 1:  # 첫 배치만 간격 두고 시작
+                    if i < len(accounts) - 1:  # 마지막 계정 제외하고 모두 간격 적용
                         # 취소 이벤트 대기 (최대 STAGGER_DELAY초) — 취소 즉시 반응
                         if self._auto_cancel_event.wait(STAGGER_DELAY):
                             break

@@ -10,9 +10,12 @@ dsj44.com 자동화 모듈.
   5. No more 클릭  6. Done/OK 클릭
 """
 import logging
+import os
+import tempfile
 import time
+import zipfile
 
-from selenium import webdriver
+import undetected_chromedriver as uc
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -50,29 +53,62 @@ class InvalidParameter(Exception):
 # 내부 헬퍼
 # ---------------------------------------------------------------------------
 
+def _make_proxy_auth_ext(host: str, port: str, user: str, pwd: str) -> str:
+    """인증 프록시용 Chrome 확장(.zip)을 임시 파일로 생성하고 경로 반환."""
+    manifest = (
+        '{"version":"1.0.0","manifest_version":2,"name":"ProxyAuth",'
+        '"permissions":["proxy","tabs","unlimitedStorage","storage",'
+        '"<all_urls>","webRequest","webRequestBlocking"],'
+        '"background":{"scripts":["bg.js"]},'
+        '"minimum_chrome_version":"22.0.0"}'
+    )
+    bg = f"""
+var cfg={{mode:"fixed_servers",rules:{{singleProxy:{{scheme:"http",host:"{host}",port:parseInt("{port}")}},bypassList:["localhost"]}}}};
+chrome.proxy.settings.set({{value:cfg,scope:"regular"}},function(){{}});
+chrome.webRequest.onAuthRequired.addListener(
+  function(){{return{{authCredentials:{{username:"{user}",password:"{pwd}"}}}}}},
+  {{urls:["<all_urls>"]}},["blocking"]);
+"""
+    fd, path = tempfile.mkstemp(suffix=".zip")
+    os.close(fd)
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("manifest.json", manifest)
+        zf.writestr("bg.js", bg)
+    return path
+
+
 def _chk(cancel_event) -> None:
     """cancel_event 가 set 되어 있으면 AutoCancelled 발생."""
     if cancel_event and cancel_event.is_set():
         raise AutoCancelled()
 
 
-def _open_driver(status_cb=None, proxy: str = "") -> webdriver.Chrome:
-    """Selenium으로 Chrome을 직접 실행하고 WebDriver 반환."""
+def _open_driver(status_cb=None, proxy: str = "") -> uc.Chrome:
+    """undetected-chromedriver로 Chrome을 실행하고 WebDriver 반환 (봇 감지 우회)."""
     def _st(msg: str) -> None:
         logger.info(msg)
         if status_cb:
             status_cb(msg)
 
     _st("Chrome 실행 중...")
-    options = webdriver.ChromeOptions()
+    options = uc.ChromeOptions()
     options.add_argument("--no-first-run")
     options.add_argument("--no-default-browser-check")
     options.add_argument("--disable-popup-blocking")
-    options.add_argument("--disable-extensions")
-    if proxy:
+
+    proxy_parts = [p.strip() for p in proxy.split(":")] if proxy else []
+    if len(proxy_parts) == 4:
+        # host:port:user:pass — 인증 프록시 (Chrome 확장으로 처리)
+        host, port, user, pwd = proxy_parts
+        ext_path = _make_proxy_auth_ext(host, port, user, pwd)
+        options.add_extension(ext_path)
+        _st(f"프록시 적용 (인증): {host}:{port}")
+    elif len(proxy_parts) == 2:
+        # host:port — 인증 없는 프록시
         options.add_argument(f"--proxy-server={proxy}")
         _st(f"프록시 적용: {proxy}")
-    driver = webdriver.Chrome(options=options)
+
+    driver = uc.Chrome(options=options)
     # h5 모바일 레이아웃으로 렌더링 (로그인 버튼 등이 화면 안에 표시됨)
     driver.set_window_size(480, 860)
     _st("Chrome 실행 완료")
@@ -236,7 +272,7 @@ def _do_login(driver, wait, login_url: str, email: str, password: str, _st,
     # ── 로그인 결과 폴링 ──────────────────────────────────────────
     # URL에 'login'이 사라지면 성공, 3초 후에도 'login' 페이지에 머물면 실패.
     _st("로그인 결과 확인 중...")
-    for attempt in range(50):  # 0.3s × 50 = 최대 15초
+    for attempt in range(80):  # 0.3s × 80 = 최대 24초
         _chk(cancel_event)
         time.sleep(0.3)
         current = driver.current_url.lower()
@@ -245,10 +281,10 @@ def _do_login(driver, wait, login_url: str, email: str, password: str, _st,
             _st("로그인 성공 — URL 전환 확인")
             return
 
-        # 10초(attempt=33) 이후에도 로그인 페이지 잔류 → 비밀번호 오류로 판단
-        if attempt >= 33:
+        # 20초(attempt=66) 이후에도 로그인 페이지 잔류 → 비밀번호 오류로 판단
+        if attempt >= 66:
             raise LoginFailed(
-                f"로그인 실패 — 10초 후에도 로그인 페이지 잔류 ({email})"
+                f"로그인 실패 — 20초 후에도 로그인 페이지 잔류 ({email})"
             )
 
     # 루프 정상 종료(이론상 도달 불가)
