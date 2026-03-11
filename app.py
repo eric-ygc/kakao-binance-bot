@@ -42,6 +42,7 @@ DEFAULT_CONFIG = {
     "watch_sender": "",
     "auto_input": False,
     "chrome_port": 9222,
+    "workers": 2,
     "site_urls": ["https://dsj44.com/h5/#/login", "", "", "", "", "", "", "", "", ""],
     "accounts": [],
     "account_index": 0,
@@ -53,7 +54,6 @@ DEFAULT_CONFIG = {
 
 CODE_PATTERN = re.compile(r'^[A-Za-z0-9]{9}$')
 logger = setup_logger("app")
-WORKERS = 2        # 병렬 워커 수
 STAGGER_DELAY = 3  # 워커 시작 간격 (초) — 동시 접속 IP 차단 방지
 
 # ---------------------------------------------------------------------------
@@ -526,8 +526,18 @@ class App(tk.Frame):
         auto_chk = ttk.Checkbutton(cd, text="코드 캐치 시 자동으로 사이트에 입력",
                                    variable=self._auto_var)
         auto_chk.grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 6))
-        ttk.Label(cd, text=f"워커 {WORKERS}개", foreground=C["accent"],
-                  style="Panel.TLabel").grid(row=0, column=3, sticky=tk.W, padx=(8, 0), pady=(0, 6))
+
+        wf = ttk.Frame(cd, style="Panel.TFrame")
+        wf.grid(row=0, column=3, sticky=tk.W, padx=(8, 0), pady=(0, 6))
+        ttk.Label(wf, text="워커 수", foreground=C["accent"],
+                  style="Panel.TLabel").pack(side=tk.LEFT)
+        self._workers_var = tk.StringVar(value=str(cfg.get("workers", 2)))
+        tk.Spinbox(wf, from_=1, to=10, textvariable=self._workers_var,
+                   width=3, font=("Segoe UI", 9),
+                   bg=C["input"], fg=C["accent"], buttonbackground=C["bg"],
+                   relief=tk.FLAT).pack(side=tk.LEFT, padx=(4, 2))
+        ttk.Label(wf, text="개", foreground=C["accent"],
+                  style="Panel.TLabel").pack(side=tk.LEFT)
 
         if not SELENIUM_OK:
             ttk.Label(cd, text="⚠  selenium 미설치 — 자동 입력 불가",
@@ -630,12 +640,17 @@ class App(tk.Frame):
             chrome_port = int(self._port_var.get())
         except ValueError:
             chrome_port = 9222
+        try:
+            workers = max(1, min(10, int(self._workers_var.get())))
+        except ValueError:
+            workers = 2
         return {
             "room_name": self._room_var.get().strip(),
             "poll_interval": poll_interval,
             "watch_sender": self._sender_var.get().strip(),
             "auto_input": self._auto_var.get(),
             "chrome_port": chrome_port,
+            "workers": workers,
             "site_urls": [v.get().strip() for v in self._site_url_vars],
             "accounts": self._accounts,
             "account_index": self._account_idx,
@@ -930,14 +945,23 @@ class App(tk.Frame):
             self._msg_queue.put(("error", "⚠ 활성화된 계정이 없습니다. 계정 관리에서 ☑ 체크하세요."))
             return
 
+        try:
+            workers = max(1, min(10, int(self._workers_var.get())))
+        except ValueError:
+            workers = 2
+
         total = len(accounts)
-        self._msg_queue.put(("system", f"━━ 자동 입력 시작: {code} | 활성 계정 {total}개 (워커 {WORKERS}개 병렬) ━━"))
+        self._msg_queue.put(("system", f"━━ 자동 입력 시작: {code} | 활성 계정 {total}개 (워커 {workers}개 병렬) ━━"))
 
         results = {}  # index → ("ok"|"fail", message)
 
         def _process(i: int, acct: dict) -> None:
             acct_label = f"[{i+1}/{total}] {acct['email']}"
-            self._msg_queue.put(("system", f"→ {acct_label} 처리 중..."))
+            proxy = acct.get("proxy", "").strip()
+            if proxy:
+                self._msg_queue.put(("system", f"→ {acct_label} 처리 중... (프록시: {proxy})"))
+            else:
+                self._msg_queue.put(("system", f"→ {acct_label} 처리 중..."))
 
             def _status(msg: str) -> None:
                 self._msg_queue.put(("system", f"  · [{i+1}] {msg}"))
@@ -949,6 +973,7 @@ class App(tk.Frame):
                     password=acct["password"],
                     status_cb=_status,
                     cancel_event=self._auto_cancel_event,
+                    proxy=proxy,
                 )
                 results[i] = ("ok", acct_label)
                 self._msg_queue.put(("auto_ok", f"✓ 완료: {acct_label}"))
@@ -958,12 +983,12 @@ class App(tk.Frame):
                 results[i] = ("fail", acct_label)
                 self._msg_queue.put(("error", f"✗ 실패: {acct_label} [{type(e).__name__}] — {e}"))
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
             import time as _time
             futures = []
             for i, acct in enumerate(accounts):
                 futures.append(pool.submit(_process, i, acct))
-                if i < WORKERS - 1:  # 첫 배치만 간격 두고 시작
+                if i < workers - 1:  # 첫 배치만 간격 두고 시작
                     _time.sleep(STAGGER_DELAY)
             concurrent.futures.wait(futures)
 
@@ -1103,6 +1128,7 @@ class _AccountEditDialog(tk.Toplevel):
             ("이메일",   "email",    False),
             ("비밀번호", "password", True),
             ("비고",     "memo",     False),
+            ("프록시",   "proxy",    False),
         ]
         self._vars = {}
         for r, (label, key, is_pw) in enumerate(fields):
@@ -1123,15 +1149,20 @@ class _AccountEditDialog(tk.Toplevel):
                             show="" if self._show_pw.get() else "*")).grid(
             row=1, column=2, padx=(0, 14))
 
+        # 프록시 힌트
+        ttk.Label(self, text="예) http://1.2.3.4:8080  또는  http://user:pw@ip:port  (빈칸=미사용)",
+                  foreground=C["fg_dim"], font=("Segoe UI", 7)).grid(
+            row=3, column=1, sticky=tk.W, padx=(0, 14), pady=(0, 4))
+
         # 사용 여부
         self._enabled_var = tk.BooleanVar(
             value=account.get("enabled", True) if account else True)
         ttk.Checkbutton(self, text="이 계정 사용",
                         variable=self._enabled_var).grid(
-            row=3, column=1, sticky=tk.W, padx=(0, 14), pady=(0, 6))
+            row=4, column=1, sticky=tk.W, padx=(0, 14), pady=(0, 6))
 
         btn_frame = ttk.Frame(self)
-        btn_frame.grid(row=4, column=0, columnspan=3, pady=12)
+        btn_frame.grid(row=5, column=0, columnspan=3, pady=12)
         ttk.Button(btn_frame, text="확인", style="Start.TButton",
                    command=self._ok).pack(side=tk.LEFT, padx=6)
         ttk.Button(btn_frame, text="취소",
@@ -1149,6 +1180,7 @@ class _AccountEditDialog(tk.Toplevel):
             "email":    email,
             "password": self._vars["password"].get(),
             "memo":     self._vars["memo"].get().strip(),
+            "proxy":    self._vars["proxy"].get().strip(),
             "enabled":  self._enabled_var.get(),
         }
         self.destroy()
@@ -1159,7 +1191,7 @@ class AccountManagerDialog(tk.Toplevel):
         super().__init__(parent)
         self.title("계정 목록 관리")
         self.resizable(True, True)
-        self.minsize(580, 460)
+        self.minsize(700, 460)
         self.configure(bg=C["bg"])
         self.grab_set()
 
@@ -1180,7 +1212,7 @@ class AccountManagerDialog(tk.Toplevel):
         tree_frame = ttk.Frame(self)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=4)
 
-        cols = ("check", "no", "email", "password", "memo", "del")
+        cols = ("check", "no", "email", "password", "memo", "proxy", "del")
         self._tree = ttk.Treeview(tree_frame, columns=cols,
                                   show="headings", height=16)
         self._tree.heading("check",    text="사용")
@@ -1188,12 +1220,14 @@ class AccountManagerDialog(tk.Toplevel):
         self._tree.heading("email",    text="이메일")
         self._tree.heading("password", text="비밀번호")
         self._tree.heading("memo",     text="비고")
+        self._tree.heading("proxy",    text="프록시")
         self._tree.heading("del",      text="삭제")
         self._tree.column("check",    width=45,  anchor="center", stretch=False)
         self._tree.column("no",       width=45,  anchor="center", stretch=False)
-        self._tree.column("email",    width=200)
-        self._tree.column("password", width=80,  stretch=False)
-        self._tree.column("memo",     width=130)
+        self._tree.column("email",    width=190)
+        self._tree.column("password", width=70,  stretch=False)
+        self._tree.column("memo",     width=90)
+        self._tree.column("proxy",    width=140)
         self._tree.column("del",      width=45,  anchor="center", stretch=False)
 
         sb = ttk.Scrollbar(tree_frame, command=self._tree.yview)
@@ -1238,6 +1272,8 @@ class AccountManagerDialog(tk.Toplevel):
             marker = "▶" if i == self._current_idx else str(i + 1)
             masked = "•" * min(len(acct.get("password", "")), 8) or "(없음)"
             memo   = acct.get("memo", "")
+            proxy  = acct.get("proxy", "")
+            proxy_disp = proxy if proxy else "—"
             tags = []
             if i == self._current_idx:
                 tags.append("current")
@@ -1245,7 +1281,7 @@ class AccountManagerDialog(tk.Toplevel):
                 tags.append("disabled")
             self._tree.insert("", tk.END, iid=str(i),
                               values=(check, marker, acct.get("email", ""),
-                                      masked, memo, "✕"),
+                                      masked, memo, proxy_disp, "✕"),
                               tags=tuple(tags))
         if self._accounts and 0 <= self._current_idx < len(self._accounts):
             self._tree.selection_set(str(self._current_idx))
@@ -1268,11 +1304,11 @@ class AccountManagerDialog(tk.Toplevel):
         idx = int(row_id)
         if col == "#1":
             self._toggle_enabled(idx)
-        elif col == "#6":
+        elif col == "#7":
             self._delete_by_idx(idx)
 
     def _on_double_click(self, event) -> None:
-        if self._tree.identify_column(event.x) in ("#1", "#6"):
+        if self._tree.identify_column(event.x) in ("#1", "#7"):
             return
         self._edit()
 
@@ -1312,8 +1348,8 @@ class AccountManagerDialog(tk.Toplevel):
         return int(sel[0]) if sel else None
 
     def _add(self) -> None:
-        if len(self._accounts) >= 50:
-            messagebox.showwarning("최대 50개", "계정은 최대 50개까지 등록 가능합니다.", parent=self)
+        if len(self._accounts) >= 200:
+            messagebox.showwarning("최대 200개", "계정은 최대 200개까지 등록 가능합니다.", parent=self)
             return
         dlg = _AccountEditDialog(self)
         self.wait_window(dlg)

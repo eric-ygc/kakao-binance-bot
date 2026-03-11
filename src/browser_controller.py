@@ -56,7 +56,7 @@ def _chk(cancel_event) -> None:
         raise AutoCancelled()
 
 
-def _open_driver(status_cb=None) -> webdriver.Chrome:
+def _open_driver(status_cb=None, proxy: str = "") -> webdriver.Chrome:
     """Selenium으로 Chrome을 직접 실행하고 WebDriver 반환."""
     def _st(msg: str) -> None:
         logger.info(msg)
@@ -69,6 +69,9 @@ def _open_driver(status_cb=None) -> webdriver.Chrome:
     options.add_argument("--no-default-browser-check")
     options.add_argument("--disable-popup-blocking")
     options.add_argument("--disable-extensions")
+    if proxy:
+        options.add_argument(f"--proxy-server={proxy}")
+        _st(f"프록시 적용: {proxy}")
     driver = webdriver.Chrome(options=options)
     # h5 모바일 레이아웃으로 렌더링 (로그인 버튼 등이 화면 안에 표시됨)
     driver.set_window_size(480, 860)
@@ -388,6 +391,7 @@ def submit_order_code(
     password: str = "",
     status_cb=None,
     cancel_event=None,
+    proxy: str = "",
 ) -> None:
     """
     지정 사이트에 로그인 후 코드 자동 입력.
@@ -415,7 +419,7 @@ def submit_order_code(
         _chk(cancel_event)
         if len(urls) > 1:
             _st(f"[{idx+1}/{len(urls)}] {url}")
-        driver = _open_driver(status_cb)
+        driver = _open_driver(status_cb, proxy=proxy)
         try:
             _do_submit(driver, code, url, email, password, _st, cancel_event)
             _st("자동 입력 완료!")
@@ -511,6 +515,7 @@ def click_no_more(
     password: str = "",
     status_cb=None,
     cancel_event=None,
+    proxy: str = "",
 ) -> None:
     """
     No more → Done/OK 흐름 실행.
@@ -538,7 +543,7 @@ def click_no_more(
         _chk(cancel_event)
         if len(urls) > 1:
             _st(f"[{idx+1}/{len(urls)}] {url}")
-        driver = _open_driver(status_cb)
+        driver = _open_driver(status_cb, proxy=proxy)
         try:
             _do_no_more(driver, url, email, password, _st, cancel_event)
             _st("No more 완료!")
