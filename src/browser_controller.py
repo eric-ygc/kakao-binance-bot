@@ -547,8 +547,8 @@ def _do_no_more(driver, login_url: str, email: str, password: str, _st,
         )
         time.sleep(0.5)
     except RuntimeError:
-        _st("⚠ Done/OK 버튼 미표시 — 다음 계정으로 건너뜀")
-        return
+        _st("✗ Done/OK 버튼 미표시 — 실패")
+        raise RuntimeError("Done/OK 버튼이 나타나지 않았습니다.")
 
     # ── Step 7: "Already followed the order" 팝업 확인 ──────────
     _chk(cancel_event)
