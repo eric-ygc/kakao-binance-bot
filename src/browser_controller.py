@@ -522,25 +522,33 @@ def _do_no_more(driver, login_url: str, email: str, password: str, _st,
     # ── Step 5: Confirm to follow the order 클릭 ─────────────────
     _chk(cancel_event)
     _st("Confirm to follow the order 클릭 중...")
-    _click(driver, wait,
-        xpath=f"//*[contains({_ci('text()')}, 'confirm to follow')]",
-        label="Confirm to follow the order",
-    )
-    time.sleep(1.5)
+    try:
+        _click(driver, wait,
+            xpath=f"//*[contains({_ci('text()')}, 'confirm to follow')]",
+            label="Confirm to follow the order",
+        )
+        time.sleep(1.5)
+    except RuntimeError:
+        _st("⚠ Confirm to follow the order 버튼 미표시 — 다음 계정으로 건너뜀")
+        return
 
     # ── Step 6: Done / OK 클릭 ───────────────────────────────────
     _chk(cancel_event)
     _st("Done/OK 클릭 중...")
-    _click(driver, wait,
-        xpath=(
-            f"//*["
-            f"  contains({_ci('text()')}, 'done')"
-            f"  or contains({_ci('text()')}, 'ok')"
-            f"]"
-        ),
-        label="Done/OK 버튼",
-    )
-    time.sleep(0.5)
+    try:
+        _click(driver, wait,
+            xpath=(
+                f"//*["
+                f"  contains({_ci('text()')}, 'done')"
+                f"  or contains({_ci('text()')}, 'ok')"
+                f"]"
+            ),
+            label="Done/OK 버튼",
+        )
+        time.sleep(0.5)
+    except RuntimeError:
+        _st("⚠ Done/OK 버튼 미표시 — 다음 계정으로 건너뜀")
+        return
 
     # ── Step 7: "Already followed the order" 팝업 확인 ──────────
     _chk(cancel_event)

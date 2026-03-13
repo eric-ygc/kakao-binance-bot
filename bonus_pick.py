@@ -331,6 +331,15 @@ class BonusPickApp(tk.Frame):
         while len(sched_times)   < 4: sched_times.append("")
         while len(sched_enabled) < 4: sched_enabled.append(False)
 
+        def _fmt_time(var):
+            t = var.get().strip().replace(":", "")
+            if len(t) == 3:
+                t = "0" + t
+            if len(t) == 4 and t.isdigit():
+                h, m = int(t[:2]), int(t[2:])
+                if 0 <= h <= 23 and 0 <= m <= 59:
+                    var.set(f"{h:02d}:{m:02d}")
+
         for row_idx in range(2):
             srow = tk.Frame(ca, bg=C["panel"])
             srow.pack(fill=tk.X, pady=1)
@@ -340,13 +349,16 @@ class BonusPickApp(tk.Frame):
                 tv = tk.StringVar(value=str(sched_times[i]))
                 ttk.Checkbutton(srow, variable=ev,
                                 style="TCheckbutton").pack(side=tk.LEFT)
-                tk.Entry(srow,
+                e = tk.Entry(srow,
                          textvariable=tv,
                          font=("Consolas", 10),
                          fg=C["yellow"], bg=C["input"],
                          insertbackground=C["yellow"],
                          relief=tk.FLAT, justify=tk.CENTER,
-                         width=6).pack(side=tk.LEFT, padx=(2, 14))
+                         width=6)
+                e.pack(side=tk.LEFT, padx=(2, 14))
+                e.bind("<FocusOut>", lambda *_, v=tv: _fmt_time(v))
+                e.bind("<Return>",   lambda *_, v=tv: _fmt_time(v))
                 self._schedules.append((ev, tv))
 
         tk.Frame(ca, bg=C["border"], height=1).pack(fill=tk.X, pady=(8, 6))
@@ -538,7 +550,16 @@ class BonusPickApp(tk.Frame):
             if now != self._last_triggered_time:
                 for ev, tv in self._schedules:
                     t = tv.get().strip()
-                    if ev.get() and t == now:
+                    if not ev.get() or not t:
+                        continue
+                    try:
+                        t_norm = datetime.datetime.strptime(t, "%H:%M").strftime("%H:%M")
+                    except ValueError:
+                        try:
+                            t_norm = datetime.datetime.strptime(t, "%I:%M").strftime("%H:%M")
+                        except ValueError:
+                            t_norm = t
+                    if t_norm == now:
                         self._last_triggered_time = now
                         self._append_log(f"⏰ 예약 실행: {now}", tag="system")
                         self._run_submit()

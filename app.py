@@ -497,6 +497,19 @@ class App(tk.Frame):
         while len(saved_scheds) < 2:
             saved_scheds.append({"enabled": False, "start": "", "stop": ""})
 
+        def _fmt_time(var):
+            t = var.get().strip().replace(":", "")
+            if len(t) == 3:
+                t = "0" + t
+            if len(t) == 4 and t.isdigit():
+                h, m = int(t[:2]), int(t[2:])
+                if 0 <= h <= 23 and 0 <= m <= 59:
+                    var.set(f"{h:02d}:{m:02d}")
+
+        def _bind_time(entry, var):
+            entry.bind("<FocusOut>", lambda *_: _fmt_time(var))
+            entry.bind("<Return>",   lambda *_: _fmt_time(var))
+
         for i, sc in enumerate(saved_scheds[:2]):
             ev  = tk.BooleanVar(value=bool(sc.get("enabled", False)))
             sv  = tk.StringVar(value=str(sc.get("start", "")))
@@ -508,16 +521,20 @@ class App(tk.Frame):
             ttk.Checkbutton(srow, variable=ev, style="TCheckbutton").pack(side=tk.LEFT)
             tk.Label(srow, text="시작", font=("Segoe UI", 8),
                      fg=C["fg_dim"], bg=C["panel"]).pack(side=tk.LEFT, padx=(2, 2))
-            tk.Entry(srow, textvariable=sv,
+            e_start = tk.Entry(srow, textvariable=sv,
                      font=("Consolas", 10), fg=C["ok"], bg=C["input"],
                      insertbackground=C["ok"], relief=tk.FLAT,
-                     justify=tk.CENTER, width=6).pack(side=tk.LEFT)
+                     justify=tk.CENTER, width=6)
+            e_start.pack(side=tk.LEFT)
+            _bind_time(e_start, sv)
             tk.Label(srow, text="  종료", font=("Segoe UI", 8),
                      fg=C["fg_dim"], bg=C["panel"]).pack(side=tk.LEFT, padx=(6, 2))
-            tk.Entry(srow, textvariable=stv,
+            e_stop = tk.Entry(srow, textvariable=stv,
                      font=("Consolas", 10), fg=C["error"], bg=C["input"],
                      insertbackground=C["error"], relief=tk.FLAT,
-                     justify=tk.CENTER, width=6).pack(side=tk.LEFT)
+                     justify=tk.CENTER, width=6)
+            e_stop.pack(side=tk.LEFT)
+            _bind_time(e_stop, stv)
 
         # ─── 자동 입력 설정 카드 ──────────────────────────────────────
         cd = self._make_card(main, "자동 입력 설정")
@@ -818,7 +835,16 @@ class App(tk.Frame):
             start_t = sv.get().strip()
             stop_t  = stv.get().strip()
 
-            if start_t and start_t == now and not is_running:
+            def _norm(t: str) -> str:
+                try:
+                    return datetime.datetime.strptime(t, "%H:%M").strftime("%H:%M")
+                except ValueError:
+                    try:
+                        return datetime.datetime.strptime(t, "%I:%M").strftime("%H:%M")
+                    except ValueError:
+                        return t
+
+            if start_t and _norm(start_t) == now and not is_running:
                 key = f"start-{today}-{now}-{i}"
                 if self._last_sched_action[i] != key:
                     self._last_sched_action[i] = key
@@ -826,7 +852,7 @@ class App(tk.Frame):
                     self._start_monitor()
                     is_running = True
 
-            if stop_t and stop_t == now and is_running:
+            if stop_t and _norm(stop_t) == now and is_running:
                 key = f"stop-{today}-{now}-{i}"
                 if self._last_sched_action[i] != key:
                     self._last_sched_action[i] = key
@@ -1049,6 +1075,51 @@ class App(tk.Frame):
             if any(v[0] == "cancel" for v in results.values()):
                 self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
                 return
+
+            # ── 실패 계정 자동 재시도 ─────────────────────────────────
+            failed_indices = [i for i, v in results.items() if v[0] == "fail"]
+            if failed_indices and not self._auto_cancel_event.is_set():
+                retry_total = len(failed_indices)
+                self._msg_queue.put(("system", f"── 실패 {retry_total}개 재시도 시작 ──"))
+                for r_idx, orig_i in enumerate(failed_indices):
+                    if self._auto_cancel_event.is_set():
+                        break
+                    acct = accounts[orig_i]
+                    acct_label_r = f"[재시도 {r_idx+1}/{retry_total}] {acct['email']}"
+                    if proxy_pool:
+                        proxy_r = proxy_pool[orig_i % len(proxy_pool)]
+                    else:
+                        proxy_r = acct.get("proxy", "").strip()
+                    self._msg_queue.put(("system", f"→ {acct_label_r} 처리 중..."))
+
+                    def _status_r(msg: str, idx=orig_i) -> None:
+                        self._msg_queue.put(("system", f"  · [재시도] {msg}"))
+
+                    try:
+                        submit_order_code(
+                            code, port, site_urls,
+                            email=acct["email"],
+                            password=acct["password"],
+                            status_cb=_status_r,
+                            cancel_event=self._auto_cancel_event,
+                            proxy=proxy_r,
+                        )
+                        results[orig_i] = ("ok", acct_label_r)
+                        self._msg_queue.put(("auto_ok", f"✓ 완료: {acct_label_r}"))
+                    except AutoCancelled:
+                        results[orig_i] = ("cancel", acct_label_r)
+                        break
+                    except Exception as e:
+                        results[orig_i] = ("fail", acct_label_r)
+                        self._msg_queue.put(("error", f"✗ 재시도 실패: {acct_label_r} [{type(e).__name__}] — {e}"))
+
+                    if r_idx < retry_total - 1:
+                        if self._auto_cancel_event.wait(STAGGER_DELAY):
+                            break
+
+                if any(v[0] == "cancel" for v in results.values()):
+                    self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
+                    return
 
             success_count = sum(1 for v in results.values() if v[0] == "ok")
             fail_count    = sum(1 for v in results.values() if v[0] == "fail")
