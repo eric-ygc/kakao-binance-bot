@@ -83,8 +83,12 @@ def _chk(cancel_event) -> None:
         raise AutoCancelled()
 
 
+_driver_count = 0  # 창 위치 오프셋용 카운터
+
 def _open_driver(status_cb=None, proxy: str = "") -> uc.Chrome:
     """undetected-chromedriver로 Chrome을 실행하고 WebDriver 반환 (봇 감지 우회)."""
+    global _driver_count
+
     def _st(msg: str) -> None:
         logger.info(msg)
         if status_cb:
@@ -110,7 +114,11 @@ def _open_driver(status_cb=None, proxy: str = "") -> uc.Chrome:
 
     driver = uc.Chrome(options=options)
     # h5 모바일 레이아웃으로 렌더링 (로그인 버튼 등이 화면 안에 표시됨)
-    driver.set_window_size(480, 860)
+    driver.set_window_size(480, 1020)
+    # 창 겹침 방지: 가로 4열 배치
+    col = _driver_count % 4
+    driver.set_window_position(col * 480, 0)
+    _driver_count += 1
     _st("Chrome 실행 완료")
     return driver
 

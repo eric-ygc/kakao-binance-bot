@@ -29,7 +29,7 @@ from src.message_parser import ChatMessage
 from version import VERSION
 
 try:
-    from src.browser_controller import AutoCancelled, submit_order_code
+    from src.browser_controller import AutoCancelled, LoginFailed, submit_order_code
     SELENIUM_OK = True
 except ImportError:
     SELENIUM_OK = False
@@ -1058,6 +1058,9 @@ class App(tk.Frame):
                     self._msg_queue.put(("auto_ok", f"✓ 완료: {acct_label}"))
                 except AutoCancelled:
                     results[i] = ("cancel", acct_label)
+                except LoginFailed as e:
+                    results[i] = ("login_fail", acct_label)
+                    self._msg_queue.put(("error", f"✗ 로그인 실패: {acct_label} — {e}"))
                 except Exception as e:
                     results[i] = ("fail", acct_label)
                     self._msg_queue.put(("error", f"✗ 실패: {acct_label} [{type(e).__name__}] — {e}"))
@@ -1076,8 +1079,8 @@ class App(tk.Frame):
                 self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
                 return
 
-            # ── 실패 계정 자동 재시도 ─────────────────────────────────
-            failed_indices = [i for i, v in results.items() if v[0] == "fail"]
+            # ── 로그인 실패 계정만 자동 재시도 ─────────────────────────
+            failed_indices = [i for i, v in results.items() if v[0] == "login_fail"]
             if failed_indices and not self._auto_cancel_event.is_set():
                 retry_total = len(failed_indices)
                 self._msg_queue.put(("system", f"── 실패 {retry_total}개 재시도 시작 ──"))
@@ -1122,7 +1125,7 @@ class App(tk.Frame):
                     return
 
             success_count = sum(1 for v in results.values() if v[0] == "ok")
-            fail_count    = sum(1 for v in results.values() if v[0] == "fail")
+            fail_count    = sum(1 for v in results.values() if v[0] in ("fail", "login_fail"))
             tag = "auto_ok" if fail_count == 0 else "system"
             self._msg_queue.put((
                 tag,
