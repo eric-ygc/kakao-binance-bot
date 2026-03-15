@@ -7,6 +7,7 @@
 import datetime
 import json
 import queue
+import random
 import re
 import sys
 import threading
@@ -55,7 +56,9 @@ DEFAULT_CONFIG = {
 
 CODE_PATTERN = re.compile(r'^[A-Za-z0-9]{9}$')
 logger = setup_logger("app")
-STAGGER_DELAY = 10  # 워커 시작 간격 (초) — 동시 접속 IP 차단 방지
+def _stagger_delay() -> float:
+    """워커 시작 간격: 3~5초 랜덤"""
+    return random.uniform(3.0, 5.0)
 
 # ---------------------------------------------------------------------------
 # Neumorphism 색상 팔레트
@@ -823,19 +826,17 @@ class App(tk.Frame):
         self._check_monitor_schedule()
 
     def _check_monitor_schedule(self) -> None:
-        now_dt = datetime.datetime.now()
-        today  = now_dt.strftime("%Y-%m-%d")
-        now    = now_dt.strftime("%H:%M")
-        is_running = (self._stop_event is not None and
-                      not self._stop_event.is_set())
-
-        for i, (ev, sv, stv) in enumerate(self._monitor_schedules):
-            if not ev.get():
-                continue
-            start_t = sv.get().strip()
-            stop_t  = stv.get().strip()
+        try:
+            now_dt = datetime.datetime.now()
+            today  = now_dt.strftime("%Y-%m-%d")
+            now    = now_dt.strftime("%H:%M")
+            is_running = (self._stop_event is not None and
+                          not self._stop_event.is_set())
 
             def _norm(t: str) -> str:
+                t = t.strip()
+                if not t:
+                    return ""
                 try:
                     return datetime.datetime.strptime(t, "%H:%M").strftime("%H:%M")
                 except ValueError:
@@ -844,23 +845,33 @@ class App(tk.Frame):
                     except ValueError:
                         return t
 
-            if start_t and _norm(start_t) == now and not is_running:
-                key = f"start-{today}-{now}-{i}"
-                if self._last_sched_action[i] != key:
-                    self._last_sched_action[i] = key
-                    self._append_log(f"⏰ 예약 시작: {now}", tag="system")
-                    self._start_monitor()
-                    is_running = True
+            for i, (ev, sv, stv) in enumerate(self._monitor_schedules):
+                if not ev.get():
+                    continue
+                start_t = sv.get().strip()
+                stop_t  = stv.get().strip()
 
-            if stop_t and _norm(stop_t) == now and is_running:
-                key = f"stop-{today}-{now}-{i}"
-                if self._last_sched_action[i] != key:
-                    self._last_sched_action[i] = key
-                    self._append_log(f"⏰ 예약 종료: {now}", tag="system")
-                    self._stop_monitor()
-                    is_running = False
+                if start_t and _norm(start_t) == now and not is_running:
+                    key = f"start-{today}-{now}-{i}"
+                    if self._last_sched_action[i] != key:
+                        self._last_sched_action[i] = key
+                        logger.info(f"스케줄 자동 시작: {now}")
+                        self._append_log(f"⏰ 예약 시작: {now}", tag="system")
+                        self._start_monitor()
+                        is_running = True
 
-        self.after(10000, self._check_monitor_schedule)
+                if stop_t and _norm(stop_t) == now and is_running:
+                    key = f"stop-{today}-{now}-{i}"
+                    if self._last_sched_action[i] != key:
+                        self._last_sched_action[i] = key
+                        logger.info(f"스케줄 자동 종료: {now}")
+                        self._append_log(f"⏰ 예약 종료: {now}", tag="system")
+                        self._stop_monitor()
+                        is_running = False
+        except Exception as e:
+            logger.error(f"스케줄러 오류: {e}")
+        finally:
+            self.after(10000, self._check_monitor_schedule)
 
     def _clear_log(self) -> None:
         self._log_lines.clear()
@@ -1071,7 +1082,7 @@ class App(tk.Frame):
                     futures.append(pool.submit(_process, i, acct))
                     if i < len(accounts) - 1:  # 마지막 계정 제외하고 모두 간격 적용
                         # 취소 이벤트 대기 (최대 STAGGER_DELAY초) — 취소 즉시 반응
-                        if self._auto_cancel_event.wait(STAGGER_DELAY):
+                        if self._auto_cancel_event.wait(_stagger_delay()):
                             break
                 concurrent.futures.wait(futures)
 
@@ -1117,7 +1128,7 @@ class App(tk.Frame):
                         self._msg_queue.put(("error", f"✗ 재시도 실패: {acct_label_r} [{type(e).__name__}] — {e}"))
 
                     if r_idx < retry_total - 1:
-                        if self._auto_cancel_event.wait(STAGGER_DELAY):
+                        if self._auto_cancel_event.wait(_stagger_delay()):
                             break
 
                 if any(v[0] == "cancel" for v in results.values()):
