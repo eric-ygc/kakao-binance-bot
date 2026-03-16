@@ -56,9 +56,7 @@ DEFAULT_CONFIG = {
 
 CODE_PATTERN = re.compile(r'^[A-Za-z0-9]{9}$')
 logger = setup_logger("app")
-def _stagger_delay() -> float:
-    """워커 시작 간격: 5~8초 랜덤"""
-    return random.uniform(5.0, 8.0)
+STAGGER_DELAY = 10  # 워커 시작 간격 (초)
 
 # ---------------------------------------------------------------------------
 # Neumorphism 색상 팔레트
@@ -823,15 +821,29 @@ class App(tk.Frame):
 
     def _start_monitor_scheduler(self) -> None:
         self._last_sched_action = ["", ""]
-        self._check_monitor_schedule()
+        self._sched_check_counter = 0
+        self._last_sched_log_min = ""
+        for i, (ev, sv, stv) in enumerate(self._monitor_schedules):
+            logger.info(f"스케줄 초기화 [{i}]: enabled={ev.get()}, start={sv.get()}, stop={stv.get()}")
 
     def _check_monitor_schedule(self) -> None:
+        """_poll_queue에서 호출됨 (200ms마다). 10초 간격으로 스케줄 체크."""
+        self._sched_check_counter += 1
+        if self._sched_check_counter < 50:  # 200ms × 50 = 10초
+            return
+        self._sched_check_counter = 0
+
         try:
             now_dt = datetime.datetime.now()
             today  = now_dt.strftime("%Y-%m-%d")
             now    = now_dt.strftime("%H:%M")
             is_running = (self._stop_event is not None and
                           not self._stop_event.is_set())
+
+            # 1분마다 스케줄러 동작 확인 로그
+            if now != self._last_sched_log_min:
+                self._last_sched_log_min = now
+                logger.debug(f"스케줄러 체크: {now}, 모니터링={'실행중' if is_running else '대기'}")
 
             def _norm(t: str) -> str:
                 t = t.strip()
@@ -870,8 +882,6 @@ class App(tk.Frame):
                         is_running = False
         except Exception as e:
             logger.error(f"스케줄러 오류: {e}")
-        finally:
-            self.after(10000, self._check_monitor_schedule)
 
     def _clear_log(self) -> None:
         self._log_lines.clear()
@@ -930,6 +940,7 @@ class App(tk.Frame):
             self._status_var.set("모니터링 종료")
             self._monitor_thread = None
 
+        self._check_monitor_schedule()
         self.after(200, self._poll_queue)
 
     # ------------------------------------------------------------------
@@ -948,8 +959,8 @@ class App(tk.Frame):
         else:
             plain = f"[{now_str}] [{msg.timestamp_str}] {msg.sender}: {msg.content}"
             self._log_lines.append({"text": plain, "tag": ""})
-        if len(self._log_lines) > 2000:
-            self._log_lines = self._log_lines[-2000:]
+        if len(self._log_lines) > 10000:
+            self._log_lines = self._log_lines[-10000:]
 
         self._log.config(state=tk.NORMAL)
         self._log.insert(tk.END, f"[{now_str}] ", "date_time")
@@ -1082,7 +1093,7 @@ class App(tk.Frame):
                     futures.append(pool.submit(_process, i, acct))
                     if i < len(accounts) - 1:  # 마지막 계정 제외하고 모두 간격 적용
                         # 취소 이벤트 대기 (최대 STAGGER_DELAY초) — 취소 즉시 반응
-                        if self._auto_cancel_event.wait(_stagger_delay()):
+                        if self._auto_cancel_event.wait(STAGGER_DELAY):
                             break
                 concurrent.futures.wait(futures)
 
@@ -1128,7 +1139,7 @@ class App(tk.Frame):
                         self._msg_queue.put(("error", f"✗ 재시도 실패: {acct_label_r} [{type(e).__name__}] — {e}"))
 
                     if r_idx < retry_total - 1:
-                        if self._auto_cancel_event.wait(_stagger_delay()):
+                        if self._auto_cancel_event.wait(STAGGER_DELAY):
                             break
 
                 if any(v[0] == "cancel" for v in results.values()):
@@ -1152,8 +1163,8 @@ class App(tk.Frame):
 
     def _append_log(self, text: str, tag: str = "") -> None:
         self._log_lines.append({"text": text, "tag": tag})
-        if len(self._log_lines) > 2000:
-            self._log_lines = self._log_lines[-2000:]
+        if len(self._log_lines) > 10000:
+            self._log_lines = self._log_lines[-10000:]
         self._log.config(state=tk.NORMAL)
         self._log.insert(tk.END, text + "\n", tag if tag else ())
         self._log.see(tk.END)
@@ -1203,7 +1214,7 @@ class App(tk.Frame):
         try:
             data = {
                 "caught_codes": self._caught_codes_full,
-                "log_lines":    self._log_lines[-2000:],
+                "log_lines":    self._log_lines[-10000:],
             }
             with open(LOG_DATA_PATH, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
