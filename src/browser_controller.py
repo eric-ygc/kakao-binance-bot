@@ -32,21 +32,10 @@ TIMEOUT = 15
 
 
 # ---------------------------------------------------------------------------
-# 예외 클래스
+# 예외 클래스 (공유 모듈에서 import)
 # ---------------------------------------------------------------------------
 
-class AutoCancelled(Exception):
-    """중지 버튼으로 자동 입력이 취소됐을 때 발생."""
-
-
-class LoginFailed(Exception):
-    """이메일/비밀번호 오류로 로그인에 실패했을 때 발생.
-    이 예외는 다음 사이트로 재시도하지 않고 즉시 상위로 전파된다."""
-
-
-class InvalidParameter(Exception):
-    """Confirm 후 Invalid parameter 팝업이 감지됐을 때 발생.
-    이 예외는 다음 사이트로 재시도하지 않고 즉시 상위로 전파된다."""
+from src.exceptions import AutoCancelled, LoginFailed, InvalidParameter
 
 
 # ---------------------------------------------------------------------------

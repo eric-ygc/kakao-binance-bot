@@ -24,11 +24,16 @@ sys.path.insert(0, str(BASE_DIR))
 from src.logger_config import setup_logger
 from version import VERSION
 
+from src.exceptions import AutoCancelled
+
 try:
-    from src.browser_controller import AutoCancelled, click_no_more
+    from src.browser_controller import click_no_more as click_no_more_selenium
     SELENIUM_OK = True
 except ImportError:
     SELENIUM_OK = False
+
+# 보너스픽은 현재 Selenium만 지원 (API 미구현)
+click_no_more = click_no_more_selenium if SELENIUM_OK else None
 
 CONFIG_PATH   = BASE_DIR / "bonus_config.json"
 LOG_DATA_PATH = BASE_DIR / "bonus_log_data.json"

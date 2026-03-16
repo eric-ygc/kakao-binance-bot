@@ -29,11 +29,25 @@ from src.message_monitor import run_monitor
 from src.message_parser import ChatMessage
 from version import VERSION
 
+from src.exceptions import AutoCancelled, LoginFailed
+
 try:
-    from src.browser_controller import AutoCancelled, LoginFailed, submit_order_code
+    from src.api_controller import submit_order_code
+    API_OK = True
+except ImportError:
+    API_OK = False
+
+try:
+    from src.browser_controller import submit_order_code as submit_order_code_selenium
     SELENIUM_OK = True
 except ImportError:
     SELENIUM_OK = False
+
+# API 우선, Selenium 폴백
+if not API_OK and SELENIUM_OK:
+    submit_order_code = submit_order_code_selenium
+elif not API_OK and not SELENIUM_OK:
+    submit_order_code = None  # type: ignore[assignment]
 
 CONFIG_PATH   = BASE_DIR / "config.json"
 LOG_DATA_PATH = BASE_DIR / "log_data.json"
@@ -56,7 +70,7 @@ DEFAULT_CONFIG = {
 
 CODE_PATTERN = re.compile(r'^[A-Za-z0-9]{9}$')
 logger = setup_logger("app")
-STAGGER_DELAY = 10  # 워커 시작 간격 (초)
+STAGGER_DELAY = 0.3 if API_OK else 10  # API: 0.3초, Selenium: 10초
 
 # ---------------------------------------------------------------------------
 # Neumorphism 색상 팔레트
@@ -560,8 +574,8 @@ class App(tk.Frame):
         ttk.Label(wf, text="개", foreground=C["accent"],
                   style="Panel.TLabel").pack(side=tk.LEFT)
 
-        if not SELENIUM_OK:
-            ttk.Label(cd, text="⚠  selenium 미설치 — 자동 입력 불가",
+        if not API_OK and not SELENIUM_OK:
+            ttk.Label(cd, text="⚠  curl_cffi/selenium 미설치 — 자동 입력 불가",
                       foreground=C["error"],
                       style="Panel.TLabel").grid(
                 row=0, column=4, sticky=tk.W, padx=(16, 0))
@@ -1000,8 +1014,8 @@ class App(tk.Frame):
         self._history_var.set("  ".join(self._caught_history) if self._caught_history else "없음")
         self._status_var.set(f"코드 캐치: {code}  ({ts} / {sender})")
 
-        if not SELENIUM_OK:
-            self._append_log("⚠ selenium 미설치 — 자동 입력 불가", tag="error")
+        if not API_OK and not SELENIUM_OK:
+            self._append_log("⚠ curl_cffi/selenium 미설치 — 자동 입력 불가", tag="error")
             return
         if not self._auto_var.get():
             self._append_log("ℹ 자동 입력 비활성", tag="system")
