@@ -400,7 +400,7 @@ def _do_submit(driver, code: str, login_url: str, email: str, password: str, _st
 
     # ── Step 7: 결과 팝업 감지 (Success / Invalid parameter) ─────
     _st("결과 확인 중...")
-    deadline = time.time() + 1
+    deadline = time.time() + 2
     while time.time() < deadline:
         _chk(cancel_event)
         try:

@@ -57,8 +57,8 @@ DEFAULT_CONFIG = {
 CODE_PATTERN = re.compile(r'^[A-Za-z0-9]{9}$')
 logger = setup_logger("app")
 def _stagger_delay() -> float:
-    """워커 시작 간격: 3~5초 랜덤"""
-    return random.uniform(3.0, 5.0)
+    """워커 시작 간격: 5~8초 랜덤"""
+    return random.uniform(5.0, 8.0)
 
 # ---------------------------------------------------------------------------
 # Neumorphism 색상 팔레트
