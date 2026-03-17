@@ -27,6 +27,8 @@ LOGIN_URL = "https://dsj44.com/h5/#/login"
 
 RETRY_COUNT = 3
 RETRY_WAIT = 5
+CODE_RETRY_COUNT = 6   # 코드 제출 "Frequent requests" 재시도 횟수
+CODE_RETRY_WAIT = 3    # 코드 제출 재시도 대기 (초)
 
 
 # ── 내부 헬퍼 ─────────────────────────────────────────
@@ -143,30 +145,42 @@ def _api_submit_code(
     _st,
     cancel_event,
 ) -> None:
-    """코드 제출. 실패 시 예외."""
+    """코드 제출. Frequent requests 시 같은 토큰으로 재시도."""
     proxies = _make_proxies(proxy)
-    _chk(cancel_event)
 
-    try:
-        resp = cffi_requests.post(
-            CODE_ENDPOINT,
-            json={"code": code},
-            headers=_build_headers(site_url, token),
-            proxies=proxies or None,
-            impersonate="chrome131",
-            timeout=20,
-        )
-    except Exception as e:
-        raise RuntimeError(f"코드 제출 연결 실패: {e}")
+    for attempt in range(CODE_RETRY_COUNT):
+        _chk(cancel_event)
 
-    data = resp.json()
-    if data.get("resultCode"):
-        return  # 성공
+        try:
+            resp = cffi_requests.post(
+                CODE_ENDPOINT,
+                json={"code": code},
+                headers=_build_headers(site_url, token),
+                proxies=proxies or None,
+                impersonate="chrome131",
+                timeout=20,
+            )
+        except Exception as e:
+            raise RuntimeError(f"코드 제출 연결 실패: {e}")
 
-    err = data.get("errCodeDes", "")
-    if "invalid" in err.lower():
-        raise InvalidParameter(f"Invalid parameter — {err}")
-    raise RuntimeError(f"코드 제출 실패: {err}")
+        data = resp.json()
+        if data.get("resultCode"):
+            return  # 성공
+
+        err = data.get("errCodeDes", "")
+        if "invalid" in err.lower():
+            raise InvalidParameter(f"Invalid parameter — {err}")
+
+        # "Frequent requests" → 같은 토큰으로 대기 후 재시도
+        if "frequent" in err.lower() or resp.status_code == 429:
+            if attempt < CODE_RETRY_COUNT - 1:
+                wait = CODE_RETRY_WAIT * (attempt + 1)  # 점진적 대기: 3, 6, 9, 12, 15초
+                _st(f"Frequent requests — {wait}초 대기 후 재시도 ({attempt + 1}/{CODE_RETRY_COUNT})")
+                time.sleep(wait)
+                continue
+            raise RuntimeError(f"코드 제출 실패 (재시도 초과): {err}")
+
+        raise RuntimeError(f"코드 제출 실패: {err}")
 
 
 # ── 공개 API (browser_controller.py와 동일한 시그니처) ──

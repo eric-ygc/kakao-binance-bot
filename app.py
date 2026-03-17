@@ -874,10 +874,12 @@ class App(tk.Frame):
             for i, (ev, sv, stv) in enumerate(self._monitor_schedules):
                 if not ev.get():
                     continue
-                start_t = sv.get().strip()
-                stop_t  = stv.get().strip()
+                start_t = _norm(sv.get())
+                stop_t  = _norm(stv.get())
 
-                if start_t and _norm(start_t) == now and not is_running:
+                # 시작~종료 범위 안에 있으면 모니터링 자동 시작 (자동입력 중엔 대기)
+                if (start_t and stop_t and start_t <= now < stop_t
+                        and not is_running and not self._auto_input_active):
                     key = f"start-{today}-{now}-{i}"
                     if self._last_sched_action[i] != key:
                         self._last_sched_action[i] = key
@@ -886,7 +888,7 @@ class App(tk.Frame):
                         self._start_monitor()
                         is_running = True
 
-                if stop_t and _norm(stop_t) == now and is_running:
+                if stop_t and stop_t == now and is_running:
                     key = f"stop-{today}-{now}-{i}"
                     if self._last_sched_action[i] != key:
                         self._last_sched_action[i] = key
@@ -1115,8 +1117,8 @@ class App(tk.Frame):
                 self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
                 return
 
-            # ── 로그인 실패 계정만 자동 재시도 ─────────────────────────
-            failed_indices = [i for i, v in results.items() if v[0] == "login_fail"]
+            # ── 실패 계정 자동 재시도 (로그인 실패 + 일반 오류) ────────
+            failed_indices = [i for i, v in results.items() if v[0] in ("login_fail", "fail")]
             if failed_indices and not self._auto_cancel_event.is_set():
                 retry_total = len(failed_indices)
                 self._msg_queue.put(("system", f"── 실패 {retry_total}개 재시도 시작 ──"))
