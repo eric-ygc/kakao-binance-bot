@@ -550,26 +550,39 @@ class BonusPickApp(tk.Frame):
         self._check_schedule()
 
     def _check_schedule(self) -> None:
-        if not self._running:
+        try:
             now = datetime.datetime.now().strftime("%H:%M")
-            if now != self._last_triggered_time:
-                for ev, tv in self._schedules:
-                    t = tv.get().strip()
-                    if not ev.get() or not t:
-                        continue
-                    try:
-                        t_norm = datetime.datetime.strptime(t, "%H:%M").strftime("%H:%M")
-                    except ValueError:
+
+            # 1분마다 스케줄러 상태 로그
+            if not hasattr(self, "_last_sched_log_min"):
+                self._last_sched_log_min = ""
+            if now != self._last_sched_log_min:
+                self._last_sched_log_min = now
+                logger.debug(f"보너스픽 스케줄러: {now}, 실행중={self._running}")
+
+            if not self._running:
+                if now != self._last_triggered_time:
+                    for ev, tv in self._schedules:
+                        t = tv.get().strip()
+                        if not ev.get() or not t:
+                            continue
                         try:
-                            t_norm = datetime.datetime.strptime(t, "%I:%M").strftime("%H:%M")
+                            t_norm = datetime.datetime.strptime(t, "%H:%M").strftime("%H:%M")
                         except ValueError:
-                            t_norm = t
-                    if t_norm == now:
-                        self._last_triggered_time = now
-                        self._append_log(f"⏰ 예약 실행: {now}", tag="system")
-                        self._run_submit()
-                        break
-        self.after(10000, self._check_schedule)
+                            try:
+                                t_norm = datetime.datetime.strptime(t, "%I:%M").strftime("%H:%M")
+                            except ValueError:
+                                t_norm = t
+                        if t_norm == now:
+                            self._last_triggered_time = now
+                            logger.info(f"보너스픽 예약 실행: {now}")
+                            self._append_log(f"⏰ 예약 실행: {now}", tag="system")
+                            self._run_submit()
+                            break
+        except Exception as e:
+            logger.error(f"_check_schedule 오류: {e}")
+        finally:
+            self.after(10000, self._check_schedule)
 
     # ------------------------------------------------------------------
     # 실행 / 중지
@@ -673,15 +686,19 @@ class BonusPickApp(tk.Frame):
 
     def _poll_queue(self) -> None:
         try:
-            while True:
-                tag, data = self._msg_queue.get_nowait()
-                if tag == "__done__":
-                    self._on_submit_done(data)
-                else:
-                    self._append_log(data, tag=tag)
-        except queue.Empty:
-            pass
-        self.after(200, self._poll_queue)
+            try:
+                while True:
+                    tag, data = self._msg_queue.get_nowait()
+                    if tag == "__done__":
+                        self._on_submit_done(data)
+                    else:
+                        self._append_log(data, tag=tag)
+            except queue.Empty:
+                pass
+        except Exception as e:
+            logger.error(f"_poll_queue 오류: {e}")
+        finally:
+            self.after(200, self._poll_queue)
 
     def _on_submit_done(self, success: bool = True) -> None:
         self._running = False

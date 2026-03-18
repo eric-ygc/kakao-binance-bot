@@ -925,39 +925,43 @@ class App(tk.Frame):
 
     def _poll_queue(self) -> None:
         try:
-            while True:
-                item = self._msg_queue.get_nowait()
-                if isinstance(item, ChatMessage):
-                    self._handle_message(item)
-                elif isinstance(item, tuple):
-                    tag, text = item
-                    if tag == "__auto_start__":
-                        self._auto_input_active = True
-                        self._stop_btn.config(state=tk.NORMAL)
-                    elif tag == "__auto_end__":
-                        self._auto_input_active = False
-                        # 모니터도 중지된 경우에만 stop 버튼 비활성화
-                        if self._stop_event is None or self._stop_event.is_set():
-                            self._stop_btn.config(state=tk.DISABLED)
-                    else:
-                        self._append_log(text, tag=tag)
-                elif isinstance(item, str):
-                    self._append_log(item, tag="system")
-        except queue.Empty:
-            pass
+            try:
+                while True:
+                    item = self._msg_queue.get_nowait()
+                    if isinstance(item, ChatMessage):
+                        self._handle_message(item)
+                    elif isinstance(item, tuple):
+                        tag, text = item
+                        if tag == "__auto_start__":
+                            self._auto_input_active = True
+                            self._stop_btn.config(state=tk.NORMAL)
+                        elif tag == "__auto_end__":
+                            self._auto_input_active = False
+                            # 모니터도 중지된 경우에만 stop 버튼 비활성화
+                            if self._stop_event is None or self._stop_event.is_set():
+                                self._stop_btn.config(state=tk.DISABLED)
+                        else:
+                            self._append_log(text, tag=tag)
+                    elif isinstance(item, str):
+                        self._append_log(item, tag="system")
+            except queue.Empty:
+                pass
 
-        # 모니터 스레드가 종료됐고 자동입력도 없을 때 버튼 상태 복구
-        if (self._monitor_thread is not None
-                and not self._monitor_thread.is_alive()
-                and self._stop_btn["state"] == tk.NORMAL
-                and not self._auto_input_active):
-            self._start_btn.config(state=tk.NORMAL)
-            self._stop_btn.config(state=tk.DISABLED)
-            self._status_var.set("모니터링 종료")
-            self._monitor_thread = None
+            # 모니터 스레드가 종료됐고 자동입력도 없을 때 버튼 상태 복구
+            if (self._monitor_thread is not None
+                    and not self._monitor_thread.is_alive()
+                    and self._stop_btn["state"] == tk.NORMAL
+                    and not self._auto_input_active):
+                self._start_btn.config(state=tk.NORMAL)
+                self._stop_btn.config(state=tk.DISABLED)
+                self._status_var.set("모니터링 종료")
+                self._monitor_thread = None
 
-        self._check_monitor_schedule()
-        self.after(200, self._poll_queue)
+            self._check_monitor_schedule()
+        except Exception as e:
+            logger.error(f"_poll_queue 오류: {e}")
+        finally:
+            self.after(200, self._poll_queue)
 
     # ------------------------------------------------------------------
     # 메시지 처리
