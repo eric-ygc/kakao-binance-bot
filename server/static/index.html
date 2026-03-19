@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>픽보조 관리</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- 로그인 -->
+<div class="login-wrap" id="loginWrap">
+    <div class="login-box">
+        <h1>픽보조 관리</h1>
+        <input type="password" id="loginPw" placeholder="비밀번호" autocomplete="off">
+        <button onclick="doLogin()">로그인</button>
+        <div class="login-error" id="loginErr"></div>
+    </div>
+</div>
+
+<!-- 메인 앱 -->
+<div class="app" id="app">
+    <div class="header">
+        <h1>픽보조 관리</h1>
+        <button onclick="doLogout()">로그아웃</button>
+    </div>
+    <div class="main">
+        <!-- 사이드바 -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <span>PC 목록</span>
+                <button onclick="showAddPC()">+ 추가</button>
+            </div>
+            <ul class="pc-list" id="pcList"></ul>
+        </div>
+        <!-- 콘텐츠 -->
+        <div class="content" id="content">
+            <div id="overviewPage"></div>
+            <div id="detailPage" class="hidden"></div>
+        </div>
+    </div>
+</div>
+
+<!-- PC 추가 모달 -->
+<div class="modal-overlay" id="addPCModal">
+    <div class="modal">
+        <h3>PC 추가</h3>
+        <input id="newPCId" placeholder="PC ID (예: PC-01)">
+        <input id="newPCName" placeholder="표시 이름 (선택)">
+        <div class="btn-group">
+            <button class="btn btn-primary" onclick="addPC()">추가</button>
+            <button class="btn btn-secondary" onclick="closeModal('addPCModal')">취소</button>
+        </div>
+        <div id="addPCResult" class="mt-8 text-dim"></div>
+    </div>
+</div>
+
+<!-- 계정 분배 모달 -->
+<div class="modal-overlay" id="distModal">
+    <div class="modal">
+        <h3>계정 분배</h3>
+        <p class="text-dim">모든 온라인 PC에 계정을 균등 분배합니다.</p>
+        <textarea id="distAccounts" rows="8" placeholder='[{"email":"a@b.com","password":"123","memo":"","enabled":true}, ...]'></textarea>
+        <div class="btn-group">
+            <button class="btn btn-primary" onclick="distributeAccounts()">분배</button>
+            <button class="btn btn-secondary" onclick="closeModal('distModal')">취소</button>
+        </div>
+        <div id="distResult" class="mt-8 text-dim"></div>
+    </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

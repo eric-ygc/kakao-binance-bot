@@ -51,6 +51,8 @@ elif not API_OK and not SELENIUM_OK:
 
 CONFIG_PATH   = BASE_DIR / "config.json"
 LOG_DATA_PATH = BASE_DIR / "log_data.json"
+STATUS_PATH   = BASE_DIR / "status.json"
+COMMANDS_PATH = BASE_DIR / "commands.json"
 DEFAULT_CONFIG = {
     "room_name": "",
     "poll_interval": 3,
@@ -155,6 +157,13 @@ class App(tk.Frame):
         self._monitor_schedules: list = []   # [(enabled_var, start_var, stop_var), ...]
         self._last_sched_action: list = ["", ""]  # 중복 실행 방지
         self._auto_input_active: bool = False    # 자동입력 실행 중 여부
+        self._last_status_write: float = 0.0       # status.json 마지막 기록 시각
+        self._last_config_mtime: float = 0.0       # config.json 외부 변경 감지용
+        self._status_counter: int = 0              # status/command 체크 카운터
+        self._last_code_for_status: str = ""
+        self._last_code_time_for_status: str = ""
+        self._success_count: int = 0
+        self._fail_count: int = 0
 
         cfg = load_config()
         self._accounts: list = list(cfg.get("accounts", []))
@@ -835,18 +844,13 @@ class App(tk.Frame):
 
     def _start_monitor_scheduler(self) -> None:
         self._last_sched_action = ["", ""]
-        self._sched_check_counter = 0
         self._last_sched_log_min = ""
         for i, (ev, sv, stv) in enumerate(self._monitor_schedules):
             logger.info(f"스케줄 초기화 [{i}]: enabled={ev.get()}, start={sv.get()}, stop={stv.get()}")
+        self._check_monitor_schedule()
 
     def _check_monitor_schedule(self) -> None:
-        """_poll_queue에서 호출됨 (200ms마다). 10초 간격으로 스케줄 체크."""
-        self._sched_check_counter += 1
-        if self._sched_check_counter < 50:  # 200ms × 50 = 10초
-            return
-        self._sched_check_counter = 0
-
+        """독립 루프: 10초마다 스케줄 체크."""
         try:
             now_dt = datetime.datetime.now()
             today  = now_dt.strftime("%Y-%m-%d")
@@ -898,6 +902,8 @@ class App(tk.Frame):
                         is_running = False
         except Exception as e:
             logger.error(f"스케줄러 오류: {e}")
+        finally:
+            self.after(10000, self._check_monitor_schedule)
 
     def _clear_log(self) -> None:
         self._log_lines.clear()
@@ -913,8 +919,104 @@ class App(tk.Frame):
             self._stop_event.set()
         self._save_log_data()
         save_config(self._get_current_config())
+        # status.json 삭제 (오프라인 표시용)
+        try:
+            STATUS_PATH.unlink(missing_ok=True)
+        except Exception:
+            pass
         if self._win is not None:
             self._win.destroy()
+
+    # ------------------------------------------------------------------
+    # 에이전트 연동 — status.json / commands.json / config reload
+    # ------------------------------------------------------------------
+
+    def _write_status_file(self) -> None:
+        """에이전트가 읽어 서버에 보고할 상태 파일 기록"""
+        try:
+            is_running = (self._stop_event is not None and
+                          not self._stop_event.is_set())
+            enabled_count = sum(1 for a in self._accounts if a.get("enabled", True))
+            data = {
+                "monitoring_active": is_running,
+                "auto_input_active": self._auto_input_active,
+                "last_code": self._last_code_for_status,
+                "last_code_time": self._last_code_time_for_status,
+                "success_count": self._success_count,
+                "fail_count": self._fail_count,
+                "app_version": VERSION,
+                "account_count": len(self._accounts),
+                "enabled_account_count": enabled_count,
+            }
+            with open(STATUS_PATH, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+        except Exception as e:
+            logger.debug(f"status.json 기록 실패: {e}")
+
+    def _check_external_commands(self) -> None:
+        """에이전트가 기록한 commands.json 읽고 실행"""
+        if not COMMANDS_PATH.exists():
+            return
+        try:
+            with open(COMMANDS_PATH, encoding="utf-8") as f:
+                commands = json.load(f)
+            if not commands:
+                return
+            # 파일 즉시 비우기
+            with open(COMMANDS_PATH, "w", encoding="utf-8") as f:
+                json.dump([], f)
+
+            for cmd in commands:
+                cmd_type = cmd.get("type", "")
+                payload = cmd.get("payload", {})
+                logger.info(f"외부 명령 수신: {cmd_type}")
+
+                if cmd_type == "start_monitor":
+                    is_running = (self._stop_event is not None and
+                                  not self._stop_event.is_set())
+                    if not is_running:
+                        self._start_monitor()
+                elif cmd_type == "stop_monitor":
+                    self._stop_monitor()
+                elif cmd_type == "submit_code":
+                    code = payload.get("code", "")
+                    if code and CODE_PATTERN.match(code):
+                        self._append_log(f"📡 원격 코드 수신: {code}", tag="system")
+                        self._update_catch_panel(code, "원격", "서버")
+        except Exception as e:
+            logger.error(f"commands.json 처리 오류: {e}")
+
+    def _check_config_reload(self) -> None:
+        """에이전트가 config.json을 덮어쓴 경우 감지 → 리로드"""
+        try:
+            if not CONFIG_PATH.exists():
+                return
+            mtime = CONFIG_PATH.stat().st_mtime
+            if self._last_config_mtime == 0:
+                self._last_config_mtime = mtime
+                return
+            if mtime > self._last_config_mtime:
+                self._last_config_mtime = mtime
+                logger.info("config.json 외부 변경 감지 — 리로드")
+                cfg = load_config()
+                self._accounts = list(cfg.get("accounts", []))
+                self._proxies = list(cfg.get("proxies", []))
+                self._room_var.set(cfg.get("room_name", ""))
+                self._interval_var.set(str(cfg.get("poll_interval", 3)))
+                self._sender_var.set(cfg.get("watch_sender", ""))
+                self._auto_var.set(cfg.get("auto_input", False))
+                self._workers_var.set(str(cfg.get("workers", 2)))
+                self._port_var.set(str(cfg.get("chrome_port", 9222)))
+                # 스케줄 업데이트
+                scheds = cfg.get("monitor_schedules", [])
+                for i, (ev, sv, stv) in enumerate(self._monitor_schedules):
+                    if i < len(scheds):
+                        ev.set(scheds[i].get("enabled", False))
+                        sv.set(scheds[i].get("start", ""))
+                        stv.set(scheds[i].get("stop", ""))
+                self._append_log("📡 설정이 서버에서 업데이트되었습니다", tag="system")
+        except Exception as e:
+            logger.debug(f"config reload 체크 오류: {e}")
 
     # ------------------------------------------------------------------
     # 스레드 → GUI
@@ -957,7 +1059,14 @@ class App(tk.Frame):
                 self._status_var.set("모니터링 종료")
                 self._monitor_thread = None
 
-            self._check_monitor_schedule()
+            # 5초마다 status.json 기록 + commands.json 감시
+            self._status_counter += 1
+            if self._status_counter >= 25:  # 200ms × 25 = 5초
+                self._status_counter = 0
+                self._write_status_file()
+                self._check_external_commands()
+                self._check_config_reload()
+
         except Exception as e:
             logger.error(f"_poll_queue 오류: {e}")
         finally:
@@ -1168,6 +1277,10 @@ class App(tk.Frame):
 
             success_count = sum(1 for v in results.values() if v[0] == "ok")
             fail_count    = sum(1 for v in results.values() if v[0] in ("fail", "login_fail"))
+            self._success_count += success_count
+            self._fail_count += fail_count
+            self._last_code_for_status = code
+            self._last_code_time_for_status = datetime.datetime.now().isoformat()
             tag = "auto_ok" if fail_count == 0 else "system"
             self._msg_queue.put((
                 tag,

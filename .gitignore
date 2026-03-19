@@ -23,5 +23,23 @@ __pycache__/
 venv/
 *.egg-info/
 
-# Config (선택: 민감 정보 없으면 추적해도 무방)
-# config.json
+# Config (민감 정보 포함)
+config.json
+bonus_config.json
+agent_config.json
+status.json
+commands.json
+log_data.json
+bonus_log_data.json
+login_test_result.json
+data.db
+
+# Test files
+test_*.py
+
+# Misc
+계정목록/
+*.txt
+!requirements.txt
+!server/requirements.txt
+!agent/requirements.txt
