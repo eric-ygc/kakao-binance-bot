@@ -258,6 +258,9 @@ async function selectPC(id) {
             </table>
             <div class="btn-group">
                 <button class="btn btn-secondary" onclick="addAcctRow()">+ 계정 추가</button>
+                <button class="btn btn-secondary" onclick="importExcel('acct')">엑셀 불러오기</button>
+                <button class="btn btn-secondary" onclick="exportExcel('acct')">엑셀 내려받기</button>
+                <input type="file" id="excelFileAcct" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleExcelFile(event,'acct')">
             </div>
         </div>
 
@@ -282,6 +285,9 @@ async function selectPC(id) {
             </table>
             <div class="btn-group">
                 <button class="btn btn-secondary" onclick="addBonusAcctRow()">+ 보너스픽 계정 추가</button>
+                <button class="btn btn-secondary" onclick="importExcel('bacct')">엑셀 불러오기</button>
+                <button class="btn btn-secondary" onclick="exportExcel('bacct')">엑셀 내려받기</button>
+                <input type="file" id="excelFileBacct" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleExcelFile(event,'bacct')">
             </div>
         </div>
 
@@ -439,6 +445,72 @@ function addBonusAcctRow() {
 function removeBonusAcct(idx) {
     const rows = document.querySelectorAll("#bonusAcctBody tr");
     if (rows[idx]) rows[idx].remove();
+}
+
+// ── 엑셀 불러오기/내려받기 ────────────────────────────────────────────
+
+function importExcel(type) {
+    const id = type === 'acct' ? 'excelFileAcct' : 'excelFileBacct';
+    document.getElementById(id).click();
+}
+
+function handleExcelFile(event, type) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const text = e.target.result;
+        const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+        const tbody = document.getElementById(type === 'acct' ? 'acctBody' : 'bonusAcctBody');
+        const cls = type === 'acct' ? 'acct' : 'bacct';
+
+        // CSV: email,password,memo,enabled 또는 email,password
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            // 헤더 스킵
+            if (i === 0 && (line.toLowerCase().includes('email') || line.toLowerCase().includes('이메일'))) continue;
+            const parts = line.split(",").map(s => s.trim());
+            if (parts.length < 2) continue;
+            const [email, password, memo, proxy] = parts;
+            const idx = tbody.children.length;
+            const tr = document.createElement("tr");
+            tr.dataset.idx = idx;
+            tr.innerHTML = `
+                <td><input type="checkbox" class="${cls}-en" checked></td>
+                <td>${idx + 1}</td>
+                <td><input class="${cls}-email" value="${email || ''}"></td>
+                <td><input class="${cls}-pw" type="password" value="${password || ''}"></td>
+                <td><input class="${cls}-memo" value="${memo || ''}"></td>
+                <td><input class="${cls}-proxy" value="${proxy || ''}" style="font-size:11px"></td>
+                <td><button class="btn btn-danger" style="padding:2px 8px;font-size:11px" onclick="this.closest('tr').remove()">✕</button></td>
+            `;
+            tbody.appendChild(tr);
+        }
+        alert(`${tbody.children.length}개 계정 로드 완료`);
+    };
+    reader.readAsText(file, 'UTF-8');
+    event.target.value = '';
+}
+
+function exportExcel(type) {
+    const tbody = document.getElementById(type === 'acct' ? 'acctBody' : 'bonusAcctBody');
+    const cls = type === 'acct' ? 'acct' : 'bacct';
+    let csv = "이메일,비밀번호,메모,프록시,활성화\n";
+    tbody.querySelectorAll("tr").forEach(tr => {
+        const email = tr.querySelector(`.${cls}-email`).value;
+        const pw = tr.querySelector(`.${cls}-pw`).value;
+        const memo = tr.querySelector(`.${cls}-memo`).value;
+        const proxy = tr.querySelector(`.${cls}-proxy`).value;
+        const enabled = tr.querySelector(`.${cls}-en`).checked;
+        csv += `${email},${pw},${memo},${proxy},${enabled}\n`;
+    });
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = type === 'acct' ? "고정픽_계정.csv" : "보너스픽_계정.csv";
+    a.click();
+    URL.revokeObjectURL(url);
 }
 
 // ── 명령 전송 ─────────────────────────────────────────────────────────
