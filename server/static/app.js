@@ -233,8 +233,13 @@ async function selectPC(id) {
         <div class="detail-section">
             <h3>사이트 주소</h3>
             ${siteUrls.map((u, i) => `
-                <input id="cfgUrl${i}" value="${u}" placeholder="사이트 ${i+1}" style="width:100%;margin-bottom:4px;padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--fg);font-size:12px;font-family:Consolas">
+                <div style="display:flex;gap:4px;margin-bottom:4px;align-items:center">
+                    <input id="cfgUrl${i}" value="${u}" placeholder="사이트 ${i+1}" style="flex:1;padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--fg);font-size:12px;font-family:Consolas">
+                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:11px;white-space:nowrap" onclick="testSiteUrl(${i})">테스트</button>
+                    <span id="urlStatus${i}" style="font-size:11px;min-width:20px"></span>
+                </div>
             `).join("")}
+            <button class="btn btn-secondary mt-8" onclick="testAllSiteUrls()">전체 접속 테스트</button>
         </div>
 
         <!-- 계정 -->
@@ -447,6 +452,31 @@ function addBonusAcctRow() {
 function removeBonusAcct(idx) {
     const rows = document.querySelectorAll("#bonusAcctBody tr");
     if (rows[idx]) rows[idx].remove();
+}
+
+// ── 사이트 접속 테스트 ────────────────────────────────────────────────
+
+async function testSiteUrl(idx) {
+    const url = document.getElementById(`cfgUrl${idx}`).value.trim();
+    const status = document.getElementById(`urlStatus${idx}`);
+    if (!url) { status.textContent = ''; return; }
+    status.textContent = '...';
+    status.style.color = 'var(--fg-dim)';
+    try {
+        const res = await fetch(url, { mode: 'no-cors', cache: 'no-store' });
+        status.textContent = '✓';
+        status.style.color = 'var(--ok)';
+    } catch {
+        status.textContent = '✕';
+        status.style.color = 'var(--error)';
+    }
+}
+
+async function testAllSiteUrls() {
+    for (let i = 0; i < 10; i++) {
+        const url = document.getElementById(`cfgUrl${i}`);
+        if (url && url.value.trim()) await testSiteUrl(i);
+    }
 }
 
 function clearAccts(type) {
