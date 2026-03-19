@@ -41,5 +41,6 @@ test_*.py
 계정목록/
 *.txt
 !requirements.txt
+!requirements-app.txt
 !server/requirements.txt
 !agent/requirements.txt
