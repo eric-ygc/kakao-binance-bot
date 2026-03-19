@@ -139,6 +139,7 @@ async function selectPC(id) {
     const cfg = data.config || {};
     const bcfg = data.bonus_config || {};
     const accounts = cfg.accounts || [];
+    const bonusAccounts = bcfg.accounts || [];
     const proxies = cfg.proxies || [];
     const schedules = cfg.monitor_schedules || [{}, {}];
     const bSchedules = bcfg.schedule_times || ["", "", "", ""];
@@ -260,6 +261,30 @@ async function selectPC(id) {
             </div>
         </div>
 
+        <!-- 보너스픽 계정 -->
+        <div class="detail-section">
+            <h3>보너스픽 계정 관리 (${bonusAccounts.length}개)</h3>
+            <table class="acct-table">
+                <thead><tr><th>☑</th><th>#</th><th>이메일</th><th>비밀번호</th><th>메모</th><th>프록시</th><th></th></tr></thead>
+                <tbody id="bonusAcctBody">
+                    ${bonusAccounts.map((a, i) => `
+                        <tr data-idx="${i}">
+                            <td><input type="checkbox" class="bacct-en" ${a.enabled !== false ? 'checked' : ''}></td>
+                            <td>${i+1}</td>
+                            <td><input class="bacct-email" value="${a.email || ''}"></td>
+                            <td><input class="bacct-pw" type="password" value="${a.password || ''}"></td>
+                            <td><input class="bacct-memo" value="${a.memo || ''}"></td>
+                            <td><input class="bacct-proxy" value="${a.proxy || ''}" style="font-size:11px"></td>
+                            <td><button class="btn btn-danger" style="padding:2px 8px;font-size:11px" onclick="removeBonusAcct(${i})">✕</button></td>
+                        </tr>
+                    `).join("")}
+                </tbody>
+            </table>
+            <div class="btn-group">
+                <button class="btn btn-secondary" onclick="addBonusAcctRow()">+ 보너스픽 계정 추가</button>
+            </div>
+        </div>
+
         <!-- 프록시 -->
         <div class="detail-section">
             <h3>프록시 IP (${proxies.length}개)</h3>
@@ -340,10 +365,21 @@ async function saveConfig(id) {
         ],
     };
 
+    const bonusAccounts = [];
+    document.querySelectorAll("#bonusAcctBody tr").forEach(tr => {
+        bonusAccounts.push({
+            email: tr.querySelector(".bacct-email").value,
+            password: tr.querySelector(".bacct-pw").value,
+            memo: tr.querySelector(".bacct-memo").value,
+            proxy: tr.querySelector(".bacct-proxy").value,
+            enabled: tr.querySelector(".bacct-en").checked,
+        });
+    });
+
     const bonusConfig = {
         site_urls: siteUrls,
         chrome_port: parseInt(document.getElementById("cfgChromePort").value) || 9222,
-        accounts: accounts,
+        accounts: bonusAccounts,
         account_index: 0,
         schedule_times: [0,1,2,3].map(i => document.getElementById(`cfgBSched${i}Time`).value),
         schedule_enabled: [0,1,2,3].map(i => document.getElementById(`cfgBSched${i}En`).checked),
@@ -380,6 +416,28 @@ function addAcctRow() {
 
 function removeAcct(idx) {
     const rows = document.querySelectorAll("#acctBody tr");
+    if (rows[idx]) rows[idx].remove();
+}
+
+function addBonusAcctRow() {
+    const tbody = document.getElementById("bonusAcctBody");
+    const idx = tbody.children.length;
+    const tr = document.createElement("tr");
+    tr.dataset.idx = idx;
+    tr.innerHTML = `
+        <td><input type="checkbox" class="bacct-en" checked></td>
+        <td>${idx + 1}</td>
+        <td><input class="bacct-email" value=""></td>
+        <td><input class="bacct-pw" type="password" value=""></td>
+        <td><input class="bacct-memo" value=""></td>
+        <td><input class="bacct-proxy" value="" style="font-size:11px"></td>
+        <td><button class="btn btn-danger" style="padding:2px 8px;font-size:11px" onclick="this.closest('tr').remove()">✕</button></td>
+    `;
+    tbody.appendChild(tr);
+}
+
+function removeBonusAcct(idx) {
+    const rows = document.querySelectorAll("#bonusAcctBody tr");
     if (rows[idx]) rows[idx].remove();
 }
 
