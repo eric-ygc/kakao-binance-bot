@@ -465,44 +465,68 @@ function importExcel(type) {
 function handleExcelFile(event, type) {
     const file = event.target.files[0];
     if (!file) return;
+    const tbody = document.getElementById(type === 'acct' ? 'acctBody' : 'bonusAcctBody');
+    const cls = type === 'acct' ? 'acct' : 'bacct';
+
     const reader = new FileReader();
     reader.onload = function(e) {
-        const text = e.target.result;
-        const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
-        const tbody = document.getElementById(type === 'acct' ? 'acctBody' : 'bonusAcctBody');
-        const cls = type === 'acct' ? 'acct' : 'bacct';
+        let rows = [];
+        const isExcel = file.name.match(/\.xlsx?$/i);
+
+        if (isExcel && typeof XLSX !== 'undefined') {
+            // xlsx/xls 파일
+            const data = new Uint8Array(e.target.result);
+            const wb = XLSX.read(data, { type: 'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        } else {
+            // CSV 파일
+            const text = e.target.result;
+            rows = text.split("\n").map(l => l.trim()).filter(Boolean).map(l => l.split(",").map(s => s.trim()));
+        }
+
+        if (rows.length === 0) { alert("데이터 없음"); return; }
 
         // 덮어쓰기 / 이어쓰기 선택
         if (tbody.children.length > 0) {
-            const overwrite = confirm("기존 계정을 덮어쓸까요?\\n\\n확인 = 덮어쓰기\\n취소 = 이어쓰기");
+            const overwrite = confirm("기존 계정을 덮어쓸까요?\n\n확인 = 덮어쓰기\n취소 = 이어쓰기");
             if (overwrite) tbody.innerHTML = '';
         }
 
-        // CSV: email,password,memo,enabled 또는 email,password
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
             // 헤더 스킵
-            if (i === 0 && (line.toLowerCase().includes('email') || line.toLowerCase().includes('이메일'))) continue;
-            const parts = line.split(",").map(s => s.trim());
-            if (parts.length < 2) continue;
-            const [email, password, memo, proxy] = parts;
+            if (i === 0) {
+                const first = String(row[0] || '').toLowerCase();
+                if (first.includes('email') || first.includes('이메일') || first.includes('메일')) continue;
+            }
+            if (!row[0] || !row[1]) continue;
+            const email = String(row[0] || '').trim();
+            const password = String(row[1] || '').trim();
+            const memo = String(row[2] || '').trim();
+            const proxy = String(row[3] || '').trim();
             const idx = tbody.children.length;
             const tr = document.createElement("tr");
             tr.dataset.idx = idx;
             tr.innerHTML = `
                 <td><input type="checkbox" class="${cls}-en" checked></td>
                 <td>${idx + 1}</td>
-                <td><input class="${cls}-email" value="${email || ''}"></td>
-                <td><input class="${cls}-pw" type="password" value="${password || ''}"></td>
-                <td><input class="${cls}-memo" value="${memo || ''}"></td>
-                <td><input class="${cls}-proxy" value="${proxy || ''}" style="font-size:11px"></td>
+                <td><input class="${cls}-email" value="${email}"></td>
+                <td><input class="${cls}-pw" type="password" value="${password}"></td>
+                <td><input class="${cls}-memo" value="${memo}"></td>
+                <td><input class="${cls}-proxy" value="${proxy}" style="font-size:11px"></td>
                 <td><button class="btn btn-danger" style="padding:2px 8px;font-size:11px" onclick="this.closest('tr').remove()">✕</button></td>
             `;
             tbody.appendChild(tr);
         }
         alert(`${tbody.children.length}개 계정 로드 완료`);
     };
-    reader.readAsText(file, 'UTF-8');
+
+    if (file.name.match(/\.xlsx?$/i)) {
+        reader.readAsArrayBuffer(file);
+    } else {
+        reader.readAsText(file, 'UTF-8');
+    }
     event.target.value = '';
 }
 
