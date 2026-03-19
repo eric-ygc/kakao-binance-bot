@@ -258,6 +258,7 @@ async function selectPC(id) {
             </table>
             <div class="btn-group">
                 <button class="btn btn-secondary" onclick="addAcctRow()">+ 계정 추가</button>
+                <button class="btn btn-danger" onclick="clearAccts('acct')">전체 삭제</button>
                 <button class="btn btn-secondary" onclick="importExcel('acct')">엑셀 불러오기</button>
                 <button class="btn btn-secondary" onclick="exportExcel('acct')">엑셀 내려받기</button>
                 <input type="file" id="excelFileAcct" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleExcelFile(event,'acct')">
@@ -285,6 +286,7 @@ async function selectPC(id) {
             </table>
             <div class="btn-group">
                 <button class="btn btn-secondary" onclick="addBonusAcctRow()">+ 보너스픽 계정 추가</button>
+                <button class="btn btn-danger" onclick="clearAccts('bacct')">전체 삭제</button>
                 <button class="btn btn-secondary" onclick="importExcel('bacct')">엑셀 불러오기</button>
                 <button class="btn btn-secondary" onclick="exportExcel('bacct')">엑셀 내려받기</button>
                 <input type="file" id="excelFileBacct" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleExcelFile(event,'bacct')">
@@ -447,6 +449,12 @@ function removeBonusAcct(idx) {
     if (rows[idx]) rows[idx].remove();
 }
 
+function clearAccts(type) {
+    if (!confirm("전체 삭제하시겠습니까?")) return;
+    const tbody = document.getElementById(type === 'acct' ? 'acctBody' : 'bonusAcctBody');
+    tbody.innerHTML = '';
+}
+
 // ── 엑셀 불러오기/내려받기 ────────────────────────────────────────────
 
 function importExcel(type) {
@@ -463,6 +471,12 @@ function handleExcelFile(event, type) {
         const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
         const tbody = document.getElementById(type === 'acct' ? 'acctBody' : 'bonusAcctBody');
         const cls = type === 'acct' ? 'acct' : 'bacct';
+
+        // 덮어쓰기 / 이어쓰기 선택
+        if (tbody.children.length > 0) {
+            const overwrite = confirm("기존 계정을 덮어쓸까요?\\n\\n확인 = 덮어쓰기\\n취소 = 이어쓰기");
+            if (overwrite) tbody.innerHTML = '';
+        }
 
         // CSV: email,password,memo,enabled 또는 email,password
         for (let i = 0; i < lines.length; i++) {
