@@ -146,6 +146,7 @@ class BonusPickApp(tk.Frame):
         self._account_idx: int = int(cfg.get("account_index", 0))
         if self._account_idx >= len(self._accounts):
             self._account_idx = 0
+        self._config_mtime: float = CONFIG_PATH.stat().st_mtime if CONFIG_PATH.exists() else 0
 
         self._apply_dark_theme()
         self._build_ui(cfg)
@@ -551,6 +552,7 @@ class BonusPickApp(tk.Frame):
 
     def _check_schedule(self) -> None:
         try:
+            self._check_bonus_config_reload()
             now = datetime.datetime.now().strftime("%H:%M")
 
             # 1분마다 스케줄러 상태 로그
@@ -583,6 +585,35 @@ class BonusPickApp(tk.Frame):
             logger.error(f"_check_schedule 오류: {e}")
         finally:
             self.after(10000, self._check_schedule)
+
+    def _check_bonus_config_reload(self) -> None:
+        """bonus_config.json 외부 변경 감지 → 리로드."""
+        try:
+            if not CONFIG_PATH.exists():
+                return
+            mtime = CONFIG_PATH.stat().st_mtime
+            if mtime <= self._config_mtime:
+                return
+            self._config_mtime = mtime
+            cfg = load_config()
+            self._accounts = list(cfg.get("accounts", []))
+            self._account_idx = 0
+            # 스케줄 업데이트
+            for i, (ev, tv) in enumerate(self._schedules):
+                times = cfg.get("schedule_times", [])
+                enabled = cfg.get("schedule_enabled", [])
+                if i < len(times):
+                    tv.set(times[i])
+                if i < len(enabled):
+                    ev.set(enabled[i])
+            # 계정 수 표시 업데이트
+            enabled_count = sum(1 for a in self._accounts if a.get("enabled", True))
+            if hasattr(self, "_account_label"):
+                self._account_label.config(text=f"총 {len(self._accounts)}개 계정 등록 | 활성 {enabled_count}개")
+            logger.info("bonus_config.json 외부 변경 감지 — 리로드")
+            self._append_log("📡 보너스픽 설정이 서버에서 업데이트되었습니다", tag="system")
+        except Exception as e:
+            logger.error(f"bonus_config 리로드 오류: {e}")
 
     # ------------------------------------------------------------------
     # 실행 / 중지
@@ -639,6 +670,7 @@ class BonusPickApp(tk.Frame):
 
         success_count = 0
         fail_count = 0
+        failed_accounts = []
 
         for i, acct in enumerate(accounts):
             if self._auto_cancel_event.is_set():
@@ -667,6 +699,48 @@ class BonusPickApp(tk.Frame):
             except Exception as e:
                 self._msg_queue.put(("error", f"✗ 실패: {acct_label} [{type(e).__name__}] — {e}"))
                 fail_count += 1
+                failed_accounts.append(acct)
+
+        # ── 실패 계정 재시도 (1회) ──
+        if failed_accounts and not self._auto_cancel_event.is_set():
+            retry_total = len(failed_accounts)
+            retry_success = 0
+            retry_fail = 0
+            self._msg_queue.put(("system",
+                f"━━ 실패 {retry_total}건 재시도 시작 ━━"))
+
+            for i, acct in enumerate(failed_accounts):
+                if self._auto_cancel_event.is_set():
+                    self._msg_queue.put(("system", "── 취소됨 ──"))
+                    break
+
+                acct_label = f"[재시도 {i+1}/{retry_total}] {acct['email']}"
+                self._msg_queue.put(("system", f"→ {acct_label} 처리 중..."))
+
+                def _status_retry(msg: str) -> None:
+                    self._msg_queue.put(("system", f"  · {msg}"))
+
+                try:
+                    click_no_more(
+                        port, site_urls,
+                        email=acct["email"],
+                        password=acct["password"],
+                        status_cb=_status_retry,
+                        cancel_event=self._auto_cancel_event,
+                    )
+                    self._msg_queue.put(("ok", f"✓ 재시도 완료: {acct_label}"))
+                    retry_success += 1
+                except AutoCancelled:
+                    self._msg_queue.put(("system", "── 취소됨 ──"))
+                    break
+                except Exception as e:
+                    self._msg_queue.put(("error", f"✗ 재시도 실패: {acct_label} — {e}"))
+                    retry_fail += 1
+
+            success_count += retry_success
+            fail_count = retry_fail
+            self._msg_queue.put(("system",
+                f"━━ 재시도 완료 | 추가 성공 {retry_success} / 최종 실패 {retry_fail} ━━"))
 
         tag = "ok" if fail_count == 0 else "system"
         self._msg_queue.put((

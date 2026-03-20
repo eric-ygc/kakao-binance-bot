@@ -235,8 +235,12 @@ def submit_order_code(
             _st("자동 입력 완료!")
             return
 
-        except (AutoCancelled, LoginFailed, InvalidParameter):
-            raise  # 즉시 전파
+        except AutoCancelled:
+            raise  # 취소는 즉시 전파
+
+        except (LoginFailed, InvalidParameter) as e:
+            last_error = e
+            _st(f"사이트 {idx + 1} 로그인 실패: {e}")
 
         except Exception as e:
             last_error = e

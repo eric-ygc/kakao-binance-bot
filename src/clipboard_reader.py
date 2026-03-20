@@ -55,7 +55,7 @@ def _click_chat_area(hwnd: int) -> None:
 
 
 def _bring_to_foreground(hwnd: int) -> bool:
-    """창을 전경으로 가져온다. 실패 시 False 반환."""
+    """창을 전경으로 가져온다. 실패 시 대체 방법 시도."""
     try:
         _allow_set_foreground()
 
@@ -63,9 +63,60 @@ def _bring_to_foreground(hwnd: int) -> bool:
             win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
             time.sleep(0.2)
 
-        win32gui.SetForegroundWindow(hwnd)
-        time.sleep(0.12)
-        return True
+        try:
+            win32gui.SetForegroundWindow(hwnd)
+            time.sleep(0.12)
+            return True
+        except Exception:
+            pass
+
+        # 대체 방법 1: BringWindowToTop
+        try:
+            win32gui.BringWindowToTop(hwnd)
+            time.sleep(0.12)
+            fg = win32gui.GetForegroundWindow()
+            if fg == hwnd:
+                return True
+        except Exception:
+            pass
+
+        # 대체 방법 2: Alt 키 트릭 (포커스 잠금 우회)
+        try:
+            ctypes.windll.user32.keybd_event(0x12, 0, 0, 0)  # Alt down
+            ctypes.windll.user32.keybd_event(0x12, 0, 2, 0)  # Alt up
+            time.sleep(0.05)
+            win32gui.SetForegroundWindow(hwnd)
+            time.sleep(0.12)
+            return True
+        except Exception:
+            pass
+
+        # 대체 방법 3: ShowWindow + SetForegroundWindow
+        try:
+            win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+            time.sleep(0.1)
+            ctypes.windll.user32.SetForegroundWindow(hwnd)
+            time.sleep(0.12)
+            return True
+        except Exception:
+            pass
+
+        # 대체 방법 4: 포커스 없이 강제 진행 (클릭으로 활성화)
+        logger.warning("전경화 대체 방법 시도 — 직접 클릭으로 활성화")
+        try:
+            rect = win32gui.GetWindowRect(hwnd)
+            x = rect[0] + int((rect[2] - rect[0]) * 0.5)
+            y = rect[1] + 10  # 타이틀바 클릭
+            ctypes.windll.user32.SetCursorPos(x, y)
+            ctypes.windll.user32.mouse_event(0x0002, 0, 0, 0, 0)
+            time.sleep(0.03)
+            ctypes.windll.user32.mouse_event(0x0004, 0, 0, 0, 0)
+            time.sleep(0.15)
+            return True
+        except Exception as exc:
+            logger.warning(f"창 전경화 최종 실패: {exc}")
+            return False
+
     except Exception as exc:
         logger.warning(f"창 전경화 실패: {exc}")
         return False

@@ -176,6 +176,7 @@ class App(tk.Frame):
         self._build_ui(cfg)
         self._load_log_data()
         self._start_monitor_scheduler()
+        self._start_agent_sync()
         self._poll_queue()
         if self._win is not None:
             self._win.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -905,6 +906,25 @@ class App(tk.Frame):
         finally:
             self.after(10000, self._check_monitor_schedule)
 
+    # ------------------------------------------------------------------
+    # 에이전트 연동 독립 루프 (5초마다)
+    # ------------------------------------------------------------------
+
+    def _start_agent_sync(self) -> None:
+        """에이전트 연동 루프 시작."""
+        self._agent_sync_loop()
+
+    def _agent_sync_loop(self) -> None:
+        """독립 루프: 5초마다 status.json 기록 + commands.json 감시 + config reload."""
+        try:
+            self._write_status_file()
+            self._check_external_commands()
+            self._check_config_reload()
+        except Exception as e:
+            logger.error(f"에이전트 연동 오류: {e}")
+        finally:
+            self.after(5000, self._agent_sync_loop)
+
     def _clear_log(self) -> None:
         self._log_lines.clear()
         self._log.config(state=tk.NORMAL)
@@ -1058,14 +1078,6 @@ class App(tk.Frame):
                 self._stop_btn.config(state=tk.DISABLED)
                 self._status_var.set("모니터링 종료")
                 self._monitor_thread = None
-
-            # 5초마다 status.json 기록 + commands.json 감시
-            self._status_counter += 1
-            if self._status_counter >= 25:  # 200ms × 25 = 5초
-                self._status_counter = 0
-                self._write_status_file()
-                self._check_external_commands()
-                self._check_config_reload()
 
         except Exception as e:
             logger.error(f"_poll_queue 오류: {e}")
