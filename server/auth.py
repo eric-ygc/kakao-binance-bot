@@ -4,19 +4,24 @@ import datetime
 import jwt
 from fastapi import Cookie, Depends, HTTPException
 
-from .config import ADMIN_PASSWORD, JWT_SECRET
+from .config import ADMIN_PASSWORD, ADMIN_PASSWORD_2, JWT_SECRET
 
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 24
 
 
-def verify_password(password: str) -> bool:
-    return password == ADMIN_PASSWORD
+def verify_password(password: str) -> str | None:
+    """비밀번호 확인 → 성공 시 사용자 라벨 반환, 실패 시 None."""
+    if password == ADMIN_PASSWORD:
+        return "admin1"
+    if ADMIN_PASSWORD_2 and password == ADMIN_PASSWORD_2:
+        return "admin2"
+    return None
 
 
-def create_token() -> str:
+def create_token(user: str = "admin") -> str:
     payload = {
-        "sub": "admin",
+        "sub": user,
         "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=TOKEN_EXPIRE_HOURS),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=ALGORITHM)

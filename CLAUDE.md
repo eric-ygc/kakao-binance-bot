@@ -60,7 +60,7 @@ pyinstaller --onefile --windowed --name 카카오모니터 app.py
 **`app.py` — tkinter GUI**
 - 스레드 분리: 모니터링 스레드 ↔ GUI 스레드 간 `queue.Queue`로 통신
 - `root.after(200, _poll_queue)`로 200ms마다 큐를 드레인
-- 8자리 영숫자 코드 감지: `^[A-Za-z0-9]{8}$`
+- 9자리 영숫자 코드 감지: `^[A-Za-z0-9]{8}$`
 - exe 실행 시 `sys.frozen` 플래그로 `BASE_DIR` 경로 전환 (config.json 위치)
 - 설정은 `config.json`에 자동 저장/복원
 

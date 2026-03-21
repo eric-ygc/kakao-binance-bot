@@ -859,11 +859,6 @@ class App(tk.Frame):
             is_running = (self._stop_event is not None and
                           not self._stop_event.is_set())
 
-            # 1분마다 스케줄러 동작 확인 로그
-            if now != self._last_sched_log_min:
-                self._last_sched_log_min = now
-                logger.debug(f"스케줄러 체크: {now}, 모니터링={'실행중' if is_running else '대기'}")
-
             def _norm(t: str) -> str:
                 t = t.strip()
                 if not t:
@@ -876,22 +871,60 @@ class App(tk.Frame):
                     except ValueError:
                         return t
 
+            def _in_range(start: str, stop: str, t: str) -> bool:
+                """시간 범위 체크 (자정 넘김 지원)."""
+                if not start or not stop:
+                    return False
+                if start <= stop:
+                    return start <= t < stop
+                else:
+                    # 자정 넘김: 예) 23:30~00:00 → 23:30~23:59 또는 00:00
+                    return t >= start or t < stop
+
+            def _near_schedule(start: str, stop: str, now_min: int) -> bool:
+                """스케줄 시간 전후 5분 이내인지 체크."""
+                if not start or not stop:
+                    return False
+                try:
+                    sh, sm = map(int, start.split(":"))
+                    eh, em = map(int, stop.split(":"))
+                    start_min = sh * 60 + sm
+                    stop_min  = eh * 60 + em
+                    # 시작 5분 전 ~ 종료 5분 후
+                    ds = (now_min - start_min) % 1440
+                    de = (stop_min - now_min) % 1440
+                    return ds <= 5 or ds >= 1435 or de <= 5 or de >= 1435
+                except ValueError:
+                    return True  # 파싱 실패 시 항상 로그
+
+            now_minutes = now_dt.hour * 60 + now_dt.minute
+            near_any = False
+
             for i, (ev, sv, stv) in enumerate(self._monitor_schedules):
                 if not ev.get():
                     continue
                 start_t = _norm(sv.get())
                 stop_t  = _norm(stv.get())
 
-                # 시작~종료 범위 안에 있으면 모니터링 자동 시작 (자동입력 중엔 대기)
-                if (start_t and stop_t and start_t <= now < stop_t
-                        and not is_running and not self._auto_input_active):
+                if _near_schedule(start_t, stop_t, now_minutes):
+                    near_any = True
+
+                in_range = _in_range(start_t, stop_t, now)
+
+                # 범위 안에 있으면 모니터링 자동 시작 (자동입력 중엔 대기)
+                if in_range and not is_running and not self._auto_input_active:
                     key = f"start-{today}-{now}-{i}"
                     if self._last_sched_action[i] != key:
                         self._last_sched_action[i] = key
-                        logger.info(f"스케줄 자동 시작: {now}")
+                        logger.info(f"스케줄 자동 시작: {now} (범위 {start_t}~{stop_t})")
                         self._append_log(f"⏰ 예약 시작: {now}", tag="system")
                         self._start_monitor()
                         is_running = True
+                elif in_range and is_running:
+                    pass  # 이미 실행 중 — 정상
+                elif in_range and self._auto_input_active:
+                    if now != self._last_sched_log_min:
+                        logger.debug(f"스케줄[{i}]: 범위 내지만 자동입력 중 — 대기")
 
                 if stop_t and stop_t == now and is_running:
                     key = f"stop-{today}-{now}-{i}"
@@ -901,6 +934,11 @@ class App(tk.Frame):
                         self._append_log(f"⏰ 예약 종료: {now}", tag="system")
                         self._stop_monitor()
                         is_running = False
+
+            # 스케줄 전후 5분 이내일 때만 로그 출력
+            if near_any and now != self._last_sched_log_min:
+                self._last_sched_log_min = now
+                logger.debug(f"스케줄러 체크: {now}, 모니터링={'실행중' if is_running else '대기'}")
         except Exception as e:
             logger.error(f"스케줄러 오류: {e}")
         finally:

@@ -23,10 +23,12 @@ class LoginRequest(BaseModel):
 
 @router.post("/auth/login")
 def login(body: LoginRequest, response: Response):
-    if not verify_password(body.password):
+    user = verify_password(body.password)
+    if not user:
         raise HTTPException(status_code=401, detail="비밀번호 틀림")
-    token = create_token()
+    token = create_token(user)
     response.set_cookie("token", token, httponly=True, samesite="lax", max_age=86400)
+    print(f"[LOGIN] {datetime.datetime.now():%Y-%m-%d %H:%M:%S} — {user} 로그인")
     return {"ok": True}
 
 
