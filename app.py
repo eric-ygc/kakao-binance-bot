@@ -157,6 +157,7 @@ class App(tk.Frame):
         self._monitor_schedules: list = []   # [(enabled_var, start_var, stop_var), ...]
         self._last_sched_action: list = ["", ""]  # 중복 실행 방지
         self._auto_input_active: bool = False    # 자동입력 실행 중 여부
+        self._code_detected_this_slot: bool = False  # 이번 스케줄 슬롯에서 코드 감지됨
         self._last_status_write: float = 0.0       # status.json 마지막 기록 시각
         self._last_config_mtime: float = 0.0       # config.json 외부 변경 감지용
         self._status_counter: int = 0              # status/command 체크 카운터
@@ -500,7 +501,7 @@ class App(tk.Frame):
 
         self._stop_btn = ttk.Button(bf, text="■  중지",
                                     style="Stop.TButton",
-                                    command=self._stop_monitor,
+                                    command=lambda: self._stop_monitor(manual=True),
                                     state=tk.DISABLED)
         self._stop_btn.pack(side=tk.LEFT, padx=(0, 8))
 
@@ -829,11 +830,13 @@ class App(tk.Frame):
         self._status_var.set(f"모니터링 중  |  채팅방: {room_name}")
         self._append_log(f"── 모니터링 시작: '{room_name}' ──", tag="system")
 
-    def _stop_monitor(self) -> None:
+    def _stop_monitor(self, manual: bool = False) -> None:
         if self._stop_event:
             self._stop_event.set()
         self._auto_cancel_event.set()
         self._processed_codes.clear()
+        if manual:
+            self._code_detected_this_slot = True  # 수동 정지 시 스케줄러 재시작 방지
         self._start_btn.config(state=tk.NORMAL)
         self._stop_btn.config(state=tk.DISABLED)
         self._status_var.set("중지됨")
@@ -911,8 +914,8 @@ class App(tk.Frame):
 
                 in_range = _in_range(start_t, stop_t, now)
 
-                # 범위 안에 있으면 모니터링 자동 시작 (자동입력 중엔 대기)
-                if in_range and not is_running and not self._auto_input_active:
+                # 범위 안에 있으면 모니터링 자동 시작 (자동입력 중이거나 코드 감지 후엔 대기)
+                if in_range and not is_running and not self._auto_input_active and not self._code_detected_this_slot:
                     key = f"start-{today}-{now}-{i}"
                     if self._last_sched_action[i] != key:
                         self._last_sched_action[i] = key
@@ -934,6 +937,10 @@ class App(tk.Frame):
                         self._append_log(f"⏰ 예약 종료: {now}", tag="system")
                         self._stop_monitor()
                         is_running = False
+
+                # 범위 밖이면 코드 감지 플래그 리셋
+                if not in_range:
+                    self._code_detected_this_slot = False
 
             # 스케줄 전후 5분 이내일 때만 로그 출력
             if near_any and now != self._last_sched_log_min:
@@ -1035,7 +1042,7 @@ class App(tk.Frame):
                     if not is_running:
                         self._start_monitor()
                 elif cmd_type == "stop_monitor":
-                    self._stop_monitor()
+                    self._stop_monitor(manual=True)
                 elif cmd_type == "submit_code":
                     code = payload.get("code", "")
                     if code and CODE_PATTERN.match(code):
@@ -1162,6 +1169,7 @@ class App(tk.Frame):
                 # 자동입력 실행 중이면 중지 버튼 유지 (취소 가능하도록)
                 if not self._auto_input_active:
                     self._stop_btn.config(state=tk.DISABLED)
+                self._code_detected_this_slot = True
                 self._append_log("── 코드 감지로 모니터링 자동 중지 ──", tag="system")
 
     def _update_catch_panel(self, code: str, ts: str, sender: str) -> None:
