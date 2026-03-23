@@ -120,10 +120,14 @@ def load_config() -> dict:
     return dict(DEFAULT_CONFIG)
 
 
+_last_self_save_mtime: float = 0  # 앱 자체 저장 후 mtime 기록
+
 def save_config(cfg: dict) -> None:
+    global _last_self_save_mtime
     try:
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
+        _last_self_save_mtime = CONFIG_PATH.stat().st_mtime
     except Exception as e:
         logger.warning(f"설정 저장 실패: {e}")
 
@@ -1039,8 +1043,10 @@ class App(tk.Frame):
                 if cmd_type == "start_monitor":
                     is_running = (self._stop_event is not None and
                                   not self._stop_event.is_set())
-                    if not is_running:
+                    if not is_running and not self._code_detected_this_slot:
                         self._start_monitor()
+                    elif self._code_detected_this_slot:
+                        logger.info("코드 감지 슬롯 — 외부 start_monitor 무시")
                 elif cmd_type == "stop_monitor":
                     self._stop_monitor(manual=True)
                 elif cmd_type == "submit_code":
@@ -1062,6 +1068,9 @@ class App(tk.Frame):
                 return
             if mtime > self._last_config_mtime:
                 self._last_config_mtime = mtime
+                # 앱 자체 저장인 경우 무시
+                if mtime == _last_self_save_mtime:
+                    return
                 logger.info("config.json 외부 변경 감지 — 리로드")
                 cfg = load_config()
                 self._accounts = list(cfg.get("accounts", []))
@@ -1161,6 +1170,8 @@ class App(tk.Frame):
         self._log.config(state=tk.DISABLED)
 
         if is_code:
+            # 코드 감지 → 항상 플래그 설정 (모니터링 재시작 방지)
+            self._code_detected_this_slot = True
             self._update_catch_panel(code, msg.timestamp_str, msg.sender)
             # 코드 추출 성공 → 카카오톡 모니터 즉시 중단
             if self._stop_event and not self._stop_event.is_set():
@@ -1169,7 +1180,6 @@ class App(tk.Frame):
                 # 자동입력 실행 중이면 중지 버튼 유지 (취소 가능하도록)
                 if not self._auto_input_active:
                     self._stop_btn.config(state=tk.DISABLED)
-                self._code_detected_this_slot = True
                 self._append_log("── 코드 감지로 모니터링 자동 중지 ──", tag="system")
 
     def _update_catch_panel(self, code: str, ts: str, sender: str) -> None:
@@ -1192,6 +1202,9 @@ class App(tk.Frame):
             return
         if not self._auto_var.get():
             self._append_log("ℹ 자동 입력 비활성", tag="system")
+            return
+        if self._auto_input_active:
+            self._append_log(f"자동입력 진행 중 — 코드 무시: {code}", tag="system")
             return
         if code in self._processed_codes:
             self._append_log(f"중복 코드 무시: {code}", tag="system")
