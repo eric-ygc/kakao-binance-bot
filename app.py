@@ -72,7 +72,9 @@ DEFAULT_CONFIG = {
 
 CODE_PATTERN = re.compile(r'^[A-Za-z0-9]{9}$')
 logger = setup_logger("app")
-STAGGER_DELAY = 0.3 if API_OK else 10  # API: 0.3초, Selenium: 10초
+STAGGER_DELAY = 0.3 if API_OK else 10       # API: 2~3초 랜덤, Selenium: 10초
+STAGGER_DELAY_API = (2.0, 3.0)               # API 첫 시도 딜레이 범위 (초)
+STAGGER_DELAY_API_RETRY = 5.0                # API 재시도 딜레이 (초)
 
 # ---------------------------------------------------------------------------
 # Neumorphism 색상 팔레트
@@ -1113,6 +1115,7 @@ class App(tk.Frame):
                             self._stop_btn.config(state=tk.NORMAL)
                         elif tag == "__auto_end__":
                             self._auto_input_active = False
+                            self._code_detected_this_slot = True
                             # 모니터도 중지된 경우에만 stop 버튼 비활성화
                             if self._stop_event is None or self._stop_event.is_set():
                                 self._stop_btn.config(state=tk.DISABLED)
@@ -1292,8 +1295,9 @@ class App(tk.Frame):
                 for i, acct in enumerate(accounts):
                     futures.append(pool.submit(_process, i, acct))
                     if i < len(accounts) - 1:  # 마지막 계정 제외하고 모두 간격 적용
-                        # 취소 이벤트 대기 (최대 STAGGER_DELAY초) — 취소 즉시 반응
-                        if self._auto_cancel_event.wait(STAGGER_DELAY):
+                        import random
+                        delay = random.uniform(*STAGGER_DELAY_API) if API_OK else STAGGER_DELAY
+                        if self._auto_cancel_event.wait(delay):
                             break
                 concurrent.futures.wait(futures)
 
@@ -1339,7 +1343,8 @@ class App(tk.Frame):
                         self._msg_queue.put(("error", f"✗ 재시도 실패: {acct_label_r} [{type(e).__name__}] — {e}"))
 
                     if r_idx < retry_total - 1:
-                        if self._auto_cancel_event.wait(STAGGER_DELAY):
+                        retry_delay = STAGGER_DELAY_API_RETRY if API_OK else STAGGER_DELAY
+                        if self._auto_cancel_event.wait(retry_delay):
                             break
 
                 if any(v[0] == "cancel" for v in results.values()):

@@ -98,43 +98,30 @@ def _api_login(
     """로그인 후 토큰 반환. 실패 시 예외."""
     proxies = _make_proxies(proxy)
 
-    for attempt in range(RETRY_COUNT):
-        _chk(cancel_event)
-        try:
-            resp = cffi_requests.post(
-                LOGIN_ENDPOINT,
-                json={"password": password, "isValidator": True, "email": email},
-                headers=_build_headers(site_url),
-                proxies=proxies or None,
-                impersonate="chrome131",
-                timeout=20,
-            )
-        except Exception as e:
-            if attempt < RETRY_COUNT - 1:
-                _st(f"연결 오류 — {RETRY_WAIT}초 후 재시도 ({attempt + 1}/{RETRY_COUNT})")
-                time.sleep(RETRY_WAIT)
-                continue
-            raise RuntimeError(f"API 연결 실패: {e}")
+    _chk(cancel_event)
+    try:
+        resp = cffi_requests.post(
+            LOGIN_ENDPOINT,
+            json={"password": password, "isValidator": True, "email": email},
+            headers=_build_headers(site_url),
+            proxies=proxies or None,
+            impersonate="chrome131",
+            timeout=20,
+        )
+    except Exception as e:
+        raise RuntimeError(f"API 연결 실패: {e}")
 
-        if resp.status_code == 429:
-            _st(f"429 Too Many Requests — {RETRY_WAIT}초 대기 ({attempt + 1}/{RETRY_COUNT})")
-            time.sleep(RETRY_WAIT)
-            continue
+    if resp.status_code == 429:
+        raise RuntimeError(f"429 Too Many Requests ({email})")
 
-        data = resp.json()
-        if data.get("resultCode"):
-            return data["data"]  # 토큰
+    data = resp.json()
+    if data.get("resultCode"):
+        return data["data"]  # 토큰
 
-        err_msg = data.get("errCodeDes", str(data))
-        if "not exist" in err_msg.lower() or "password" in err_msg.lower():
-            raise LoginFailed(f"{err_msg} ({email})")
-        if attempt < RETRY_COUNT - 1:
-            _st(f"로그인 실패: {err_msg} — 재시도 ({attempt + 1}/{RETRY_COUNT})")
-            time.sleep(RETRY_WAIT)
-            continue
+    err_msg = data.get("errCodeDes", str(data))
+    if "not exist" in err_msg.lower() or "password" in err_msg.lower():
         raise LoginFailed(f"{err_msg} ({email})")
-
-    raise LoginFailed(f"로그인 재시도 초과 ({email})")
+    raise LoginFailed(f"{err_msg} ({email})")
 
 
 def _api_submit_code(
@@ -148,39 +135,33 @@ def _api_submit_code(
     """코드 제출. Frequent requests 시 같은 토큰으로 재시도."""
     proxies = _make_proxies(proxy)
 
-    for attempt in range(CODE_RETRY_COUNT):
-        _chk(cancel_event)
+    _chk(cancel_event)
 
-        try:
-            resp = cffi_requests.post(
-                CODE_ENDPOINT,
-                json={"code": code},
-                headers=_build_headers(site_url, token),
-                proxies=proxies or None,
-                impersonate="chrome131",
-                timeout=20,
-            )
-        except Exception as e:
-            raise RuntimeError(f"코드 제출 연결 실패: {e}")
+    try:
+        resp = cffi_requests.post(
+            CODE_ENDPOINT,
+            json={"code": code},
+            headers=_build_headers(site_url, token),
+            proxies=proxies or None,
+            impersonate="chrome131",
+            timeout=20,
+        )
+    except Exception as e:
+        raise RuntimeError(f"코드 제출 연결 실패: {e}")
 
-        data = resp.json()
-        if data.get("resultCode"):
-            return  # 성공
+    data = resp.json()
+    if data.get("resultCode"):
+        return  # 성공
 
-        err = data.get("errCodeDes", "")
-        if "invalid" in err.lower():
-            raise InvalidParameter(f"Invalid parameter — {err}")
+    err = data.get("errCodeDes", "")
+    if "invalid" in err.lower():
+        raise InvalidParameter(f"Invalid parameter — {err}")
 
-        # "Frequent requests" → 같은 토큰으로 대기 후 재시도
-        if "frequent" in err.lower() or resp.status_code == 429:
-            if attempt < CODE_RETRY_COUNT - 1:
-                wait = CODE_RETRY_WAIT * (attempt + 1)  # 점진적 대기: 3, 6, 9, 12, 15초
-                _st(f"Frequent requests — {wait}초 대기 후 재시도 ({attempt + 1}/{CODE_RETRY_COUNT})")
-                time.sleep(wait)
-                continue
-            raise RuntimeError(f"코드 제출 실패 (재시도 초과): {err}")
+    # "Frequent requests" → 즉시 실패 처리 (마지막에 일괄 재시도)
+    if "frequent" in err.lower() or resp.status_code == 429:
+        raise RuntimeError(f"Frequent requests — {err}")
 
-        raise RuntimeError(f"코드 제출 실패: {err}")
+    raise RuntimeError(f"코드 제출 실패: {err}")
 
 
 # ── 공개 API (browser_controller.py와 동일한 시그니처) ──
