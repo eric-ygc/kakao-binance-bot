@@ -922,6 +922,7 @@ class App(tk.Frame):
 
                 # 범위 안에 있으면 모니터링 자동 시작 (자동입력 중이거나 코드 감지 후엔 대기)
                 if in_range and not is_running and not self._auto_input_active and not self._code_detected_this_slot:
+                    logger.debug(f"스케줄[{i}]: 시작 조건 충족 — code_detected={self._code_detected_this_slot}, auto_input={self._auto_input_active}")
                     key = f"start-{today}-{now}-{i}"
                     if self._last_sched_action[i] != key:
                         self._last_sched_action[i] = key
@@ -934,6 +935,9 @@ class App(tk.Frame):
                 elif in_range and self._auto_input_active:
                     if now != self._last_sched_log_min:
                         logger.debug(f"스케줄[{i}]: 범위 내지만 자동입력 중 — 대기")
+                elif in_range and not is_running and self._code_detected_this_slot:
+                    if now != self._last_sched_log_min:
+                        logger.debug(f"스케줄[{i}]: 코드 감지 슬롯 — 재시작 차단 중")
 
                 if stop_t and stop_t == now and is_running:
                     key = f"stop-{today}-{now}-{i}"

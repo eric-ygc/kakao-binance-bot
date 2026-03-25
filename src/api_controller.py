@@ -227,6 +227,9 @@ def submit_order_code(
             _st(f"사이트 {idx + 1} 로그인 실패: {e}")
 
         except Exception as e:
+            # Frequent requests → 사이트 재시도 의미 없음 (같은 API 백엔드)
+            if "frequent" in str(e).lower():
+                raise
             last_error = e
             _st(f"사이트 {idx + 1} 실패: [{type(e).__name__}] {e}")
 
