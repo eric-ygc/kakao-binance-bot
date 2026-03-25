@@ -219,7 +219,10 @@ def submit_order_code(
         except AutoCancelled:
             raise  # 취소는 즉시 전파
 
-        except (LoginFailed, InvalidParameter) as e:
+        except InvalidParameter as e:
+            raise  # 코드 무효 — 사이트 재시도 의미 없음, 즉시 실패
+
+        except LoginFailed as e:
             last_error = e
             _st(f"사이트 {idx + 1} 로그인 실패: {e}")
 

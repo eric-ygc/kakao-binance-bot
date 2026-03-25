@@ -1303,6 +1303,7 @@ class App(tk.Frame):
 
             if any(v[0] == "cancel" for v in results.values()):
                 self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
+                self._code_detected_this_slot = True
                 return
 
             # ── 실패 계정 자동 재시도 (로그인 실패 + 일반 오류) ────────
@@ -1349,6 +1350,7 @@ class App(tk.Frame):
 
                 if any(v[0] == "cancel" for v in results.values()):
                     self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
+                    self._code_detected_this_slot = True
                     return
 
             success_count = sum(1 for v in results.values() if v[0] == "ok")
