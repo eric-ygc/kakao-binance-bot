@@ -1,4 +1,6 @@
 """픽보조 에이전트 — 서버와 로컬 앱 사이 중계"""
+import base64
+import io
 import json
 import logging
 import sys
@@ -155,7 +157,12 @@ class PickAgent:
 
             logger.info(f"명령 수신: {cmd_type} (id={cmd_id})")
 
-            # commands.json에 기록하여 픽보조 앱이 처리하도록
+            # 스크린샷 명령은 에이전트가 직접 처리
+            if cmd_type == "screenshot":
+                self._capture_and_upload(cmd_id)
+                continue
+
+            # 나머지 명령은 commands.json에 기록하여 픽보조 앱이 처리
             local_cmds.append({
                 "id": cmd_id,
                 "type": cmd_type,
@@ -174,6 +181,32 @@ class PickAgent:
 
         if local_cmds:
             write_commands(local_cmds)
+
+    def _capture_and_upload(self, command_id: int):
+        """화면 캡처 후 서버에 업로드"""
+        try:
+            from PIL import ImageGrab
+            img = ImageGrab.grab()
+            buf = io.BytesIO()
+            img.save(buf, format="PNG", optimize=True)
+            encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+
+            self.session.post(
+                f"{self.server_url}/api/agent/screenshot",
+                json={"command_id": command_id, "image_base64": encoded},
+                timeout=30,
+            )
+            logger.info(f"스크린샷 업로드 완료 (id={command_id})")
+        except Exception as e:
+            logger.error(f"스크린샷 캡처/업로드 실패: {e}")
+            try:
+                self.session.post(
+                    f"{self.server_url}/api/agent/command/{command_id}/ack",
+                    json={"success": False, "message": str(e)},
+                    timeout=10,
+                )
+            except Exception:
+                pass
 
     def report_code(self, code: str, total: int, success: int, fail: int):
         """코드 제출 결과 보고"""

@@ -171,7 +171,9 @@ async function selectPC(id) {
                 <button class="btn btn-danger" onclick="sendCmd('${id}','stop_monitor')">■ 중지</button>
                 <input id="manualCode" placeholder="코드 수동 입력" style="padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--fg);font-size:13px;width:140px">
                 <button class="btn btn-warn" onclick="sendCode('${id}')">전송</button>
+                <button class="btn btn-secondary" onclick="captureScreen('${id}')">📷 화면 캡처</button>
             </div>
+            <div id="screenshotArea" style="margin-top:12px"></div>
         </div>
 
         <!-- 기본 설정 -->
@@ -597,6 +599,40 @@ async function sendCode(id) {
     });
     alert(`코드 ${code} 전송 완료`);
 }
+
+async function captureScreen(id) {
+    const area = document.getElementById("screenshotArea");
+    area.innerHTML = '<span style="color:var(--fg-dim)">📷 캡처 요청 중...</span>';
+
+    const beforeTime = new Date().toISOString();
+    await api("POST", `/api/computers/${id}/command`, { command_type: "screenshot" });
+
+    let attempts = 0;
+    const maxAttempts = 15;
+    const poll = setInterval(async () => {
+        attempts++;
+        try {
+            const data = await api("GET", `/api/computers/${id}/screenshot`);
+            if (data.captured_at && data.captured_at > beforeTime) {
+                clearInterval(poll);
+                area.innerHTML = `
+                    <img src="data:image/png;base64,${data.image_base64}"
+                         style="max-width:100%;border:1px solid var(--border);border-radius:4px;margin-top:8px;cursor:pointer"
+                         onclick="window.open(this.src)">
+                    <div style="color:var(--fg-dim);font-size:11px;margin-top:4px">
+                        캡처 시각: ${new Date(data.captured_at).toLocaleString()}
+                    </div>`;
+            }
+        } catch (e) { /* 아직 없음 */ }
+        if (attempts >= maxAttempts) {
+            clearInterval(poll);
+            if (area.innerHTML.includes("캡처 요청 중")) {
+                area.innerHTML = '<span style="color:var(--error)">캡처 시간 초과 — PC가 오프라인이거나 응답 없음</span>';
+            }
+        }
+    }, 2000);
+}
+
 
 // ── PC 추가/삭제 ──────────────────────────────────────────────────────
 

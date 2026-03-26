@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import CodeLog, Command, Computer, ComputerStatus
+from ..models import CodeLog, Command, Computer, ComputerStatus, Screenshot
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
@@ -127,6 +127,44 @@ def ack_command(
     cmd.completed_at = datetime.datetime.utcnow()
     db.commit()
 
+    return {"ok": True}
+
+
+# ── 스크린샷 업로드 ───────────────────────────────────────────────────
+
+class ScreenshotUploadRequest(BaseModel):
+    command_id: int
+    image_base64: str
+
+
+@router.post("/screenshot")
+def upload_screenshot(
+    body: ScreenshotUploadRequest,
+    x_agent_key: str = Header(...),
+    db: Session = Depends(get_db),
+):
+    computer = _get_computer(db, x_agent_key)
+
+    # 기존 스크린샷 덮어쓰기 (upsert)
+    existing = db.query(Screenshot).filter(
+        Screenshot.computer_id == computer.id
+    ).first()
+    if existing:
+        existing.image_data = body.image_base64
+        existing.captured_at = datetime.datetime.utcnow()
+    else:
+        db.add(Screenshot(
+            computer_id=computer.id,
+            image_data=body.image_base64,
+        ))
+
+    # 명령 완료 처리
+    cmd = db.query(Command).filter(Command.id == body.command_id).first()
+    if cmd:
+        cmd.status = "completed"
+        cmd.completed_at = datetime.datetime.utcnow()
+
+    db.commit()
     return {"ok": True}
 
 

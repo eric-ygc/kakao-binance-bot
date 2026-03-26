@@ -31,9 +31,15 @@ from version import VERSION
 
 from src.exceptions import AutoCancelled, LoginFailed
 
+# exe 이름에 "Selenium"이 포함되면 Selenium 전용 모드
+_FORCE_SELENIUM = (
+    getattr(sys, "frozen", False)
+    and "selenium" in Path(sys.executable).stem.lower()
+)
+
 try:
     from src.api_controller import submit_order_code
-    API_OK = True
+    API_OK = not _FORCE_SELENIUM
 except ImportError:
     API_OK = False
 
@@ -1087,6 +1093,10 @@ class App(tk.Frame):
                 self._auto_var.set(cfg.get("auto_input", False))
                 self._workers_var.set(str(cfg.get("workers", 2)))
                 self._port_var.set(str(cfg.get("chrome_port", 9222)))
+                # 사이트 URL 업데이트
+                site_urls = cfg.get("site_urls", [])
+                for i, sv in enumerate(self._site_url_vars):
+                    sv.set(site_urls[i] if i < len(site_urls) else "")
                 # 스케줄 업데이트
                 scheds = cfg.get("monitor_schedules", [])
                 for i, (ev, sv, stv) in enumerate(self._monitor_schedules):

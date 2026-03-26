@@ -101,7 +101,7 @@ def _open_driver(status_cb=None, proxy: str = "") -> uc.Chrome:
         options.add_argument(f"--proxy-server={proxy}")
         _st(f"프록시 적용: {proxy}")
 
-    driver = uc.Chrome(options=options)
+    driver = uc.Chrome(options=options, version_main=146)
     # h5 모바일 레이아웃으로 렌더링 (로그인 버튼 등이 화면 안에 표시됨)
     driver.set_window_size(480, 1020)
     # 창 겹침 방지: 가로 4열 배치

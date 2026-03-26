@@ -62,19 +62,30 @@ def _extract_new_text(new_text: str, anchor: List[str]) -> Optional[str]:
     """
     new_text 에서 anchor 이후 부분만 반환.
     anchor가 없으면 new_text 전체 반환.
-    anchor를 찾지 못하면 None 반환.
+    anchor를 찾지 못하면 줄 수를 줄여가며 재시도 (10→3→2→1).
+    모두 실패하면 None 반환.
     """
     if not anchor:
         return new_text
 
     lines = new_text.splitlines()
+
+    # 전체 앵커로 먼저 시도
     idx = _find_anchor_end_index(lines, anchor)
+    if idx != -1:
+        return "\n".join(lines[idx + 1:])
 
-    if idx == -1:
-        return None
+    # 축소 매칭: 마지막 3줄, 2줄, 1줄로 점진적 시도
+    for fallback_n in (3, 2, 1):
+        if len(anchor) <= fallback_n:
+            continue
+        short_anchor = anchor[-fallback_n:]
+        idx = _find_anchor_end_index(lines, short_anchor)
+        if idx != -1:
+            logger.debug(f"앵커 축소 매칭 성공 ({fallback_n}줄)")
+            return "\n".join(lines[idx + 1:])
 
-    tail = lines[idx + 1 :]
-    return "\n".join(tail)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +160,8 @@ def run_monitor(
             # --- 신규 텍스트 추출 ---
             new_text = _extract_new_text(text, anchor)
             if new_text is None:
-                logger.warning("앵커를 찾을 수 없습니다. 이번 사이클 스킵.")
+                logger.warning("앵커를 찾을 수 없습니다. 앵커 재설정.")
+                anchor = _get_tail_anchor(text)
                 _stop.wait(timeout=poll_interval)
                 continue
 

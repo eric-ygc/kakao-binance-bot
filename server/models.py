@@ -50,6 +50,15 @@ class Command(Base):
     completed_at = Column(DateTime, nullable=True)
 
 
+class Screenshot(Base):
+    __tablename__ = "screenshots"
+
+    computer_id = Column(String, ForeignKey("computers.id", ondelete="CASCADE"),
+                         primary_key=True)
+    image_data = Column(Text, nullable=False)  # base64 PNG
+    captured_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
 class CodeLog(Base):
     __tablename__ = "code_logs"
 

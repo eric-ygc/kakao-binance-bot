@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from ..auth import create_token, require_admin, verify_password
 from ..config import HEARTBEAT_TIMEOUT
 from ..database import get_db
-from ..models import CodeLog, Command, Computer, ComputerStatus
+from ..models import CodeLog, Command, Computer, ComputerStatus, Screenshot
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
 
@@ -300,6 +300,25 @@ def get_code_logs(
         }
         for log in logs
     ]
+
+
+# ── 스크린샷 조회 ────────────────────────────────────────────────────
+
+@router.get("/computers/{computer_id}/screenshot")
+def get_screenshot(
+    computer_id: str,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    ss = db.query(Screenshot).filter(
+        Screenshot.computer_id == computer_id
+    ).first()
+    if not ss:
+        raise HTTPException(status_code=404, detail="스크린샷 없음")
+    return {
+        "image_base64": ss.image_data,
+        "captured_at": ss.captured_at.isoformat() if ss.captured_at else None,
+    }
 
 
 # ── 전체 코드 로그 (모든 PC) ──────────────────────────────────────────

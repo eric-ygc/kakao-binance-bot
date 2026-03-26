@@ -16,7 +16,14 @@ sys.path.insert(0, str(BASE_DIR))
 
 from app import App
 from bonus_pick import BonusPickApp
-from version import VERSION
+from version import VERSION, VERSION_SELENIUM
+
+# exe 이름에 "Selenium"이 포함되면 Selenium 버전 표시
+_FORCE_SELENIUM = (
+    getattr(sys, "frozen", False)
+    and "selenium" in Path(sys.executable).stem.lower()
+)
+_DISPLAY_VERSION = VERSION_SELENIUM if _FORCE_SELENIUM else VERSION
 
 NEU_BG    = "#eaeaea"
 NEU_DARK  = "#c8c8c8"
@@ -26,7 +33,7 @@ NEU_LIGHT = "#ffffff"
 class MainApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title(f"픽보조 v{VERSION}")
+        self.title(f"픽보조 v{_DISPLAY_VERSION}")
         self.resizable(True, True)
         self.minsize(560, 680)
         self.configure(bg=NEU_BG)
