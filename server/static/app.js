@@ -114,10 +114,19 @@ function renderOverview() {
         </div>
     `).join("");
 
+    const onlineCount = computers.filter(c => c.is_online).length;
     div.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
             <h2 style="font-size:16px">전체 현황 (${computers.length}대)</h2>
             <button class="btn btn-warn" onclick="showDistribute()">계정 분배</button>
+        </div>
+        <div class="detail-section" style="margin-bottom:16px">
+            <h3>코드 일괄 전송 (온라인 ${onlineCount}대)</h3>
+            <div style="display:flex;gap:8px;align-items:center">
+                <input id="globalCode" placeholder="코드 입력 (9자리)" style="padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--fg);font-size:14px;flex:1;max-width:240px">
+                <button class="btn btn-primary" onclick="sendGlobalCode()">전체 전송</button>
+                <span id="globalCodeResult" style="font-size:12px"></span>
+            </div>
         </div>
         <div class="overview-grid">${cards || '<p class="text-dim">등록된 PC가 없습니다. + 추가 버튼을 눌러주세요.</p>'}</div>
     `;
@@ -588,6 +597,30 @@ function exportExcel(type) {
 async function sendCmd(id, type) {
     await api("POST", `/api/computers/${id}/command`, { command_type: type });
     alert(`${type} 명령 전송 완료`);
+}
+
+async function sendGlobalCode() {
+    const code = document.getElementById("globalCode").value.trim();
+    const result = document.getElementById("globalCodeResult");
+    if (!code) return alert("코드를 입력하세요");
+    if (!/^[A-Za-z0-9]{9}$/.test(code)) return alert("9자리 영숫자 코드를 입력하세요");
+
+    const onlinePCs = computers.filter(c => c.is_online);
+    if (onlinePCs.length === 0) return alert("온라인 PC가 없습니다");
+
+    result.innerHTML = `<span style="color:var(--fg-dim)">전송 중... (${onlinePCs.length}대)</span>`;
+    let sent = 0;
+    for (const pc of onlinePCs) {
+        try {
+            await api("POST", `/api/computers/${pc.id}/command`, {
+                command_type: "submit_code",
+                payload: { code },
+            });
+            sent++;
+        } catch (e) { /* skip */ }
+    }
+    result.innerHTML = `<span style="color:var(--ok)">✓ ${sent}대 전송 완료 (코드: ${code})</span>`;
+    document.getElementById("globalCode").value = "";
 }
 
 async function sendCode(id) {
