@@ -321,6 +321,51 @@ def get_screenshot(
     }
 
 
+# ── 코드 브로드캐스트 (모바일 → 전체 PC) ─────────────────────────────
+
+class BroadcastCodeRequest(BaseModel):
+    code: str
+    api_key: str = ""  # 모바일 인증용
+
+
+@router.post("/broadcast-code")
+def broadcast_code(
+    body: BroadcastCodeRequest,
+    db: Session = Depends(get_db),
+):
+    code = body.code.strip()
+    if not code or len(code) != 9:
+        raise HTTPException(status_code=400, detail="9자리 코드 필요")
+
+    # 인증: api_key 또는 admin 세션
+    if body.api_key:
+        computer = db.query(Computer).filter(Computer.api_key == body.api_key).first()
+        if not computer:
+            raise HTTPException(status_code=401, detail="유효하지 않은 API 키")
+    else:
+        try:
+            require_admin(None)  # 세션 기반 인증
+        except Exception:
+            raise HTTPException(status_code=401, detail="인증 필요")
+
+    # 온라인 PC 전체에 코드 전송
+    statuses = db.query(ComputerStatus).all()
+    sent = 0
+    for status in statuses:
+        if not _check_online(status):
+            continue
+        cmd = Command(
+            computer_id=status.computer_id,
+            command_type="submit_code",
+            payload=json.dumps({"code": code}),
+        )
+        db.add(cmd)
+        sent += 1
+
+    db.commit()
+    return {"ok": True, "sent_count": sent, "code": code}
+
+
 # ── 전체 코드 로그 (모든 PC) ──────────────────────────────────────────
 
 @router.get("/logs")
