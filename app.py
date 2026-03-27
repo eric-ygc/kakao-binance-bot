@@ -13,7 +13,7 @@ import sys
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Optional
 
 # exe(frozen) 실행 시 sys.executable 기준, 스크립트 실행 시 __file__ 기준
@@ -193,6 +193,7 @@ class App(tk.Frame):
         if self._account_idx >= len(self._accounts):
             self._account_idx = 0
         self._proxies: list = list(cfg.get("proxies", []))
+        self._app_password: str = cfg.get("app_password", "")
 
         self._apply_dark_theme()
         self._build_ui(cfg)
@@ -734,6 +735,7 @@ class App(tk.Frame):
             "accounts": self._accounts,
             "account_index": self._account_idx,
             "proxies": self._proxies,
+            "app_password": self._app_password,
             "monitor_schedules": [
                 {"enabled": bool(ev.get()),
                  "start": sv.get().strip(),
@@ -799,6 +801,13 @@ class App(tk.Frame):
         ProxyManagerDialog(self, self._proxies, on_save)
 
     def _open_account_manager(self) -> None:
+        if self._app_password:
+            pw = tk.simpledialog.askstring("비밀번호", "비밀번호를 입력하세요:", show="*")
+            if pw != self._app_password:
+                if pw is not None:
+                    messagebox.showerror("오류", "비밀번호가 틀립니다.")
+                return
+
         def on_save(accounts, current_idx):
             self._accounts = accounts
             self._account_idx = current_idx
@@ -1096,6 +1105,7 @@ class App(tk.Frame):
                 cfg = load_config()
                 self._accounts = list(cfg.get("accounts", []))
                 self._proxies = list(cfg.get("proxies", []))
+                self._app_password = cfg.get("app_password", "")
                 self._room_var.set(cfg.get("room_name", ""))
                 self._interval_var.set(str(cfg.get("poll_interval", 3)))
                 self._sender_var.set(cfg.get("watch_sender", ""))
@@ -1272,7 +1282,9 @@ class App(tk.Frame):
                 workers = 2
 
             total = len(accounts)
-            self._msg_queue.put(("system", f"━━ 자동 입력 시작: {code} | 활성 계정 {total}개 (워커 {workers}개 병렬) ━━"))
+            import datetime as _dt
+            _now = _dt.datetime.now().strftime("%H:%M:%S")
+            self._msg_queue.put(("system", f"━━ 자동 입력 시작: {code} | 활성 계정 {total}개 (워커 {workers}개 병렬) | {_now} ━━"))
 
             results = {}  # index → ("ok"|"fail", message)
 
@@ -1333,7 +1345,8 @@ class App(tk.Frame):
             failed_indices = [i for i, v in results.items() if v[0] in ("login_fail", "fail")]
             if failed_indices and not self._auto_cancel_event.is_set():
                 retry_total = len(failed_indices)
-                self._msg_queue.put(("system", f"── 실패 {retry_total}개 재시도 시작 ──"))
+                _now_r = _dt.datetime.now().strftime("%H:%M:%S")
+                self._msg_queue.put(("system", f"── 실패 {retry_total}개 재시도 시작 | {_now_r} ──"))
                 for r_idx, orig_i in enumerate(failed_indices):
                     if self._auto_cancel_event.is_set():
                         break
@@ -1371,22 +1384,24 @@ class App(tk.Frame):
                         if self._auto_cancel_event.wait(retry_delay):
                             break
 
-                if any(v[0] == "cancel" for v in results.values()):
+                cancelled = any(v[0] == "cancel" for v in results.values())
+                if cancelled:
                     self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
                     self._code_detected_this_slot = True
-                    return
 
             success_count = sum(1 for v in results.values() if v[0] == "ok")
             fail_count    = sum(1 for v in results.values() if v[0] in ("fail", "login_fail"))
+            skip_count    = total - len(results)
             self._success_count += success_count
             self._fail_count += fail_count
             self._last_code_for_status = code
             self._last_code_time_for_status = datetime.datetime.now().isoformat()
-            tag = "auto_ok" if fail_count == 0 else "system"
-            self._msg_queue.put((
-                tag,
-                f"━━ 전체 완료: {code} | 성공 {success_count} / 실패 {fail_count} / 총 {total} ━━",
-            ))
+            tag = "auto_ok" if fail_count == 0 and skip_count == 0 else "system"
+            summary = f"━━ 전체 완료: {code} | 성공 {success_count} / 실패 {fail_count}"
+            if skip_count > 0:
+                summary += f" / 미실행 {skip_count}"
+            summary += f" / 총 {total} | {_dt.datetime.now().strftime('%H:%M:%S')} ━━"
+            self._msg_queue.put((tag, summary))
         finally:
             # GUI에 자동입력 종료 알림
             self._msg_queue.put(("__auto_end__", ""))

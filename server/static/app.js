@@ -214,6 +214,8 @@ async function selectPC(id) {
                     <option value="true" ${cfg.auto_input ? 'selected' : ''}>ON</option>
                     <option value="false" ${!cfg.auto_input ? 'selected' : ''}>OFF</option>
                 </select>
+                <label>앱 비밀번호</label>
+                <input id="cfgAppPassword" type="password" value="${cfg.app_password || ''}" placeholder="비워두면 잠금 없음">
             </div>
         </div>
 
@@ -383,6 +385,7 @@ async function saveConfig(id) {
         accounts: accounts,
         account_index: 0,
         proxies: proxies,
+        app_password: document.getElementById("cfgAppPassword").value,
         monitor_schedules: [
             {
                 enabled: document.getElementById("cfgSched0En").checked,

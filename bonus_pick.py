@@ -665,8 +665,9 @@ class BonusPickApp(tk.Frame):
             return
 
         total = len(accounts)
+        _now = datetime.datetime.now().strftime("%H:%M:%S")
         self._msg_queue.put(("system",
-            f"━━ 실행 시작 | 활성 계정 {total}개 ━━"))
+            f"━━ 실행 시작 | 활성 계정 {total}개 | {_now} ━━"))
 
         success_count = 0
         fail_count = 0
@@ -706,8 +707,9 @@ class BonusPickApp(tk.Frame):
             retry_total = len(failed_accounts)
             retry_success = 0
             retry_fail = 0
+            _now_r = datetime.datetime.now().strftime("%H:%M:%S")
             self._msg_queue.put(("system",
-                f"━━ 실패 {retry_total}건 재시도 시작 ━━"))
+                f"━━ 실패 {retry_total}건 재시도 시작 | {_now_r} ━━"))
 
             for i, acct in enumerate(failed_accounts):
                 if self._auto_cancel_event.is_set():
@@ -740,12 +742,12 @@ class BonusPickApp(tk.Frame):
             success_count += retry_success
             fail_count = retry_fail
             self._msg_queue.put(("system",
-                f"━━ 재시도 완료 | 추가 성공 {retry_success} / 최종 실패 {retry_fail} ━━"))
+                f"━━ 재시도 완료 | 추가 성공 {retry_success} / 최종 실패 {retry_fail} | {datetime.datetime.now().strftime('%H:%M:%S')} ━━"))
 
         tag = "ok" if fail_count == 0 else "system"
         self._msg_queue.put((
             tag,
-            f"━━ 완료 | 성공 {success_count} / 실패 {fail_count} / 총 {total} ━━",
+            f"━━ 완료 | 성공 {success_count} / 실패 {fail_count} / 총 {total} | {datetime.datetime.now().strftime('%H:%M:%S')} ━━",
         ))
         self._run_records.append({
             "success":  success_count,
