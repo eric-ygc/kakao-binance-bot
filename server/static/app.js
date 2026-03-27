@@ -424,7 +424,6 @@ async function saveConfig(id) {
     });
 
     alert("저장 완료");
-    loadComputers();
 }
 
 // ── 계정 행 추가/삭제 ─────────────────────────────────────────────────
