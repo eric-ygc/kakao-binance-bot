@@ -96,6 +96,10 @@ function renderOverview() {
     const div = document.getElementById("overviewPage");
     div.classList.remove("hidden");
 
+    // 코드 입력값 + 결과 보존
+    const prevCode = document.getElementById("globalCode")?.value || "";
+    const prevResult = document.getElementById("globalCodeResult")?.innerHTML || "";
+
     const cards = computers.map(c => `
         <div class="overview-card" onclick="selectPC('${c.id}')" style="cursor:pointer">
             <div class="card-header">
@@ -130,6 +134,10 @@ function renderOverview() {
         </div>
         <div class="overview-grid">${cards || '<p class="text-dim">등록된 PC가 없습니다. + 추가 버튼을 눌러주세요.</p>'}</div>
     `;
+
+    // 코드 입력값 + 결과 복원
+    if (prevCode) document.getElementById("globalCode").value = prevCode;
+    if (prevResult) document.getElementById("globalCodeResult").innerHTML = prevResult;
 }
 
 // ── PC 상세 ───────────────────────────────────────────────────────────
