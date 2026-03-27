@@ -82,6 +82,15 @@ STAGGER_DELAY = 0.3 if API_OK else 10       # API: 2~3초 랜덤, Selenium: 10�
 STAGGER_DELAY_API = (2.0, 3.0)               # API 첫 시도 딜레이 범위 (초)
 STAGGER_DELAY_API_RETRY = 5.0                # API 재시도 딜레이 (초)
 
+def _valid_proxy(p: str) -> str:
+    """프록시 값이 유효한 형식인지 확인. 잘못된 값('사용' 등)은 빈 문자열 반환."""
+    p = p.strip()
+    if not p:
+        return ""
+    if "." in p and (":" in p or p.startswith("http")):
+        return p
+    return ""
+
 # ---------------------------------------------------------------------------
 # Neumorphism 색상 팔레트
 # ---------------------------------------------------------------------------
@@ -1275,7 +1284,7 @@ class App(tk.Frame):
                 if proxy_pool:
                     proxy = proxy_pool[i % len(proxy_pool)]
                 else:
-                    proxy = acct.get("proxy", "").strip()
+                    proxy = _valid_proxy(acct.get("proxy", ""))
                 if proxy:
                     self._msg_queue.put(("system", f"→ {acct_label} 처리 중... (IP: {proxy})"))
                 else:
@@ -1333,7 +1342,7 @@ class App(tk.Frame):
                     if proxy_pool:
                         proxy_r = proxy_pool[orig_i % len(proxy_pool)]
                     else:
-                        proxy_r = acct.get("proxy", "").strip()
+                        proxy_r = _valid_proxy(acct.get("proxy", ""))
                     self._msg_queue.put(("system", f"→ {acct_label_r} 처리 중..."))
 
                     def _status_r(msg: str, idx=orig_i) -> None:
