@@ -324,8 +324,15 @@ def get_screenshot(
 # ── 코드 브로드캐스트 (모바일 → 전체 PC) ─────────────────────────────
 
 class BroadcastCodeRequest(BaseModel):
-    code: str
-    api_key: str = ""  # 모바일 인증용
+    code: str = ""
+    text: str = ""      # 알림 텍스트 (코드 자동 추출용)
+    sender: str = ""    # 알림 제목 (발신자/채팅방 이름)
+    api_key: str = ""   # 모바일 인증용
+
+# 9자리 영숫자 코드 패턴
+import re
+_CODE_RE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z0-9]{9}(?![A-Za-z0-9])")
+_ALLOWED_SENDER = "stephen beard"
 
 
 @router.post("/broadcast-code")
@@ -333,10 +340,6 @@ def broadcast_code(
     body: BroadcastCodeRequest,
     db: Session = Depends(get_db),
 ):
-    code = body.code.strip()
-    if not code or len(code) != 9:
-        raise HTTPException(status_code=400, detail="9자리 코드 필요")
-
     # 인증: api_key 또는 admin 세션
     if body.api_key:
         computer = db.query(Computer).filter(Computer.api_key == body.api_key).first()
@@ -344,9 +347,23 @@ def broadcast_code(
             raise HTTPException(status_code=401, detail="유효하지 않은 API 키")
     else:
         try:
-            require_admin(None)  # 세션 기반 인증
+            require_admin(None)
         except Exception:
             raise HTTPException(status_code=401, detail="인증 필요")
+
+    # 코드 결정: 직접 입력 또는 텍스트에서 추출
+    code = body.code.strip()
+    if not code and body.text:
+        # 발신자 필터 (모바일 알림용)
+        if body.sender and _ALLOWED_SENDER not in body.sender.lower():
+            return {"ok": False, "reason": "발신자 불일치", "sender": body.sender}
+        # 텍스트에서 9자리 코드 추출
+        match = _CODE_RE.search(body.text)
+        if match:
+            code = match.group()
+
+    if not code or len(code) != 9:
+        return {"ok": False, "reason": "코드 없음"}
 
     # 온라인 PC 전체에 코드 전송
     statuses = db.query(ComputerStatus).all()
