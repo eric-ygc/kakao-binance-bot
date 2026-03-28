@@ -426,6 +426,10 @@ async function saveConfig(id) {
         config, bonus_config: bonusConfig, display_name: displayName,
     });
 
+    // 사이드바 표시 이름 갱신
+    const c = computers.find(c => c.id === id);
+    if (c) c.display_name = displayName;
+    renderSidebar();
     alert("저장 완료");
 }
 
