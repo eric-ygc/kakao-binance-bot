@@ -67,7 +67,8 @@ function updateStatusFromSSE(statuses) {
         if (c) Object.assign(c, s);
     }
     renderSidebar();
-    if (!selectedPC) renderOverview();
+    const codeInput = document.getElementById("globalCode");
+    if (!selectedPC && !(codeInput && codeInput === document.activeElement)) renderOverview();
 }
 
 // ── PC 목록 ───────────────────────────────────────────────────────────
