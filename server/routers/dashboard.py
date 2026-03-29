@@ -52,7 +52,7 @@ def list_computers(
     db: Session = Depends(get_db),
     _=Depends(require_admin),
 ):
-    computers = db.query(Computer).order_by(Computer.id).all()
+    computers = db.query(Computer).order_by(Computer.display_name, Computer.id).all()
     result = []
     for c in computers:
         status = db.query(ComputerStatus).filter(
