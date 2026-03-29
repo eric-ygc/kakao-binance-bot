@@ -164,6 +164,7 @@ def get_computer(
             "app_version": status.app_version if status else "",
             "account_count": status.account_count if status else 0,
             "enabled_account_count": status.enabled_account_count if status else 0,
+            "recent_logs": json.loads(status.recent_logs) if status and status.recent_logs else [],
         },
     }
 

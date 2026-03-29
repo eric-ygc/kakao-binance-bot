@@ -114,6 +114,7 @@ class PickAgent:
                 "app_version": status.get("app_version", ""),
                 "account_count": status.get("account_count", 0),
                 "enabled_account_count": status.get("enabled_account_count", 0),
+                "recent_logs": status.get("recent_logs", []),
             },
             timeout=10,
         )

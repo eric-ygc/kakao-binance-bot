@@ -36,6 +36,7 @@ class ComputerStatus(Base):
     app_version = Column(String, default="")
     account_count = Column(Integer, default=0)
     enabled_account_count = Column(Integer, default=0)
+    recent_logs = Column(Text, default="[]")
 
 
 class Command(Base):

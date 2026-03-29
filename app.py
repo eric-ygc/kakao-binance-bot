@@ -27,7 +27,7 @@ sys.path.insert(0, str(BASE_DIR))
 from src.logger_config import setup_logger
 from src.message_monitor import run_monitor
 from src.message_parser import ChatMessage
-from version import VERSION
+from version import VERSION, VERSION_SELENIUM
 
 from src.exceptions import AutoCancelled, LoginFailed
 
@@ -79,7 +79,7 @@ DEFAULT_CONFIG = {
 CODE_PATTERN = re.compile(r'^[A-Za-z0-9]{9}$')
 logger = setup_logger("app")
 STAGGER_DELAY = 0.3 if API_OK else 10       # API: 2~3초 랜덤, Selenium: 10초
-STAGGER_DELAY_API = (2.0, 3.0)               # API 첫 시도 딜레이 범위 (초)
+STAGGER_DELAY_API = (5.0, 5.0)               # API 첫 시도 딜레이 (초)
 STAGGER_DELAY_API_RETRY = 5.0                # API 재시도 딜레이 (초)
 
 def _valid_proxy(p: str) -> str:
@@ -535,6 +535,17 @@ class App(tk.Frame):
         ttk.Button(bf, text="텍스트 저장",
                    command=self._export_text).pack(side=tk.LEFT)
 
+        # 코드 수동 입력
+        bf2 = tk.Frame(cc, bg=C["panel"])
+        bf2.pack(fill=tk.X, pady=(8, 0))
+        self._manual_code_var = tk.StringVar()
+        tk.Entry(bf2, textvariable=self._manual_code_var,
+                 font=("Consolas", 11), fg=C["yellow"], bg=C["input"],
+                 insertbackground=C["yellow"], relief=tk.FLAT,
+                 width=12).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(bf2, text="코드 입력",
+                   command=self._submit_manual_code).pack(side=tk.LEFT)
+
         # 예약 시작·종료
         tk.Frame(cc, bg=C["border"], height=1).pack(fill=tk.X, pady=(10, 6))
         tk.Label(cc, text="예약 시작·종료 시각  (HH:MM)",
@@ -816,6 +827,20 @@ class App(tk.Frame):
 
         AccountManagerDialog(self, self._accounts, self._account_idx, on_save)
 
+    def _submit_manual_code(self) -> None:
+        code = self._manual_code_var.get().strip()
+        if not code:
+            self._append_log("코드를 입력하세요.", tag="error")
+            return
+        if not CODE_PATTERN.match(code):
+            self._append_log("9자리 영숫자 코드를 입력하세요.", tag="error")
+            return
+        self._manual_code_var.set("")
+        self._append_log(f"📝 수동 코드 입력: {code}", tag="system")
+        self._update_catch_panel(code, "수동", "직접입력")
+        if self._auto_var.get():
+            self._start_auto_input(code)
+
     def _advance_account(self) -> None:
         if self._accounts:
             self._account_idx = (self._account_idx + 1) % len(self._accounts)
@@ -1036,6 +1061,8 @@ class App(tk.Frame):
             is_running = (self._stop_event is not None and
                           not self._stop_event.is_set())
             enabled_count = sum(1 for a in self._accounts if a.get("enabled", True))
+            # 최근 로그 20줄
+            recent_logs = [l.get("text", "") for l in self._log_lines[-20:]]
             data = {
                 "monitoring_active": is_running,
                 "auto_input_active": self._auto_input_active,
@@ -1043,9 +1070,10 @@ class App(tk.Frame):
                 "last_code_time": self._last_code_time_for_status,
                 "success_count": self._success_count,
                 "fail_count": self._fail_count,
-                "app_version": VERSION,
+                "app_version": VERSION_SELENIUM if _FORCE_SELENIUM else VERSION,
                 "account_count": len(self._accounts),
                 "enabled_account_count": enabled_count,
+                "recent_logs": recent_logs,
             }
             with open(STATUS_PATH, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False)
@@ -1336,14 +1364,14 @@ class App(tk.Frame):
                             break
                 concurrent.futures.wait(futures)
 
-            if any(v[0] == "cancel" for v in results.values()):
+            cancelled = any(v[0] == "cancel" for v in results.values())
+            if cancelled:
                 self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
                 self._code_detected_this_slot = True
-                return
 
             # ── 실패 계정 자동 재시도 (로그인 실패 + 일반 오류) ────────
             failed_indices = [i for i, v in results.items() if v[0] in ("login_fail", "fail")]
-            if failed_indices and not self._auto_cancel_event.is_set():
+            if failed_indices and not cancelled and not self._auto_cancel_event.is_set():
                 retry_total = len(failed_indices)
                 _now_r = _dt.datetime.now().strftime("%H:%M:%S")
                 self._msg_queue.put(("system", f"── 실패 {retry_total}개 재시도 시작 | {_now_r} ──"))

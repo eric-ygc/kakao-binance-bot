@@ -331,7 +331,15 @@ async function selectPC(id) {
             <button class="btn btn-primary" onclick="saveConfig('${id}')" style="padding:10px 32px;font-size:14px">설정 저장</button>
         </div>
 
-        <!-- 로그 -->
+        <!-- 메시지 로그 -->
+        <div class="detail-section">
+            <h3>메시지 로그 (최근 20줄)</h3>
+            <div style="background:var(--surface2);padding:10px;border-radius:4px;max-height:200px;overflow-y:auto;font-family:Consolas;font-size:11px;color:var(--ok);white-space:pre-wrap">
+                ${(data.status.recent_logs || []).slice().reverse().join("\n") || '<span style="color:var(--fg-dim)">로그 없음</span>'}
+            </div>
+        </div>
+
+        <!-- 코드 제출 로그 -->
         <div class="detail-section">
             <h3>코드 제출 로그</h3>
             <table class="log-table">
