@@ -6,7 +6,8 @@ dsj44.com API 자동화 모듈 (curl_cffi 기반, Selenium 없이 동작).
   2. POST /api/app/second/share/user/follow/code  -> 코드 제출
 
 흐름 B -- 보너스픽 (click_no_more):
-  (API 엔드포인트 확인 필요 -- 현재 미구현, Selenium 폴백 사용)
+  1. POST /api/app/user/login  -> 토큰 획득
+  2. POST /api/app/second/share/user/follow  -> follow 요청
 """
 
 import logging
@@ -23,6 +24,7 @@ logger = logging.getLogger("api_controller")
 API_HOST = "https://api.ddjea.com"
 LOGIN_ENDPOINT = f"{API_HOST}/api/app/user/login"
 CODE_ENDPOINT = f"{API_HOST}/api/app/second/share/user/follow/code"
+FOLLOW_ENDPOINT = f"{API_HOST}/api/app/second/share/user/follow"
 LOGIN_URL = "https://dsj44.com/h5/#/login"
 
 RETRY_COUNT = 3
@@ -239,6 +241,47 @@ def submit_order_code(
     raise RuntimeError(f"모든 사이트({len(urls)}개) 실패: {last_error}")
 
 
+def _api_follow(
+    token: str,
+    share_id: str,
+    site_url: str,
+    proxy: str,
+    _st,
+    cancel_event,
+) -> None:
+    """보너스픽 follow 요청."""
+    proxies = _make_proxies(proxy)
+
+    _chk(cancel_event)
+
+    try:
+        resp = cffi_requests.post(
+            FOLLOW_ENDPOINT,
+            json={"shareId": share_id},
+            headers=_build_headers(site_url, token),
+            proxies=proxies or None,
+            impersonate="chrome131",
+            timeout=20,
+        )
+    except Exception as e:
+        raise RuntimeError(f"follow 연결 실패: {e}")
+
+    data = resp.json()
+    if data.get("resultCode"):
+        return  # 성공
+
+    err = data.get("errCodeDes", "")
+    if "invalid" in err.lower():
+        raise InvalidParameter(f"Invalid parameter — {err}")
+    if "frequent" in err.lower() or resp.status_code == 429:
+        raise RuntimeError(f"Frequent requests — {err}")
+    if "already" in err.lower():
+        _st(f"이미 처리됨: {err}")
+        return  # 이미 follow 완료
+
+    raise RuntimeError(f"follow 실패: {err}")
+
+
 def click_no_more(
     port: int = 9222,
     login_url=LOGIN_URL,
@@ -248,5 +291,63 @@ def click_no_more(
     cancel_event=None,
     proxy: str = "",
 ) -> None:
-    """보너스픽 (API) — 엔드포인트 확인 후 구현 예정."""
-    raise NotImplementedError("보너스픽 API 미구현 — Selenium 폴백 사용")
+    """보너스픽 (API 방식) — 로그인 + follow 요청."""
+    _chk(cancel_event)
+
+    def _st(msg: str) -> None:
+        logger.info(msg)
+        if status_cb:
+            status_cb(msg)
+
+    # URL 목록 정리
+    if isinstance(login_url, str):
+        urls = [login_url] if login_url.strip() else []
+    else:
+        urls = [u.strip() for u in login_url if u.strip()]
+    if not urls:
+        urls = [LOGIN_URL]
+
+    _st(f"보너스픽 API | 계정={email}")
+
+    # shareId — 고정값 (변경 시 수정 필요)
+    share_id = "4294409423340421112"
+
+    last_error = None
+    for idx, url in enumerate(urls):
+        _chk(cancel_event)
+        if len(urls) > 1:
+            _st(f"[{idx + 1}/{len(urls)}] {url}")
+
+        try:
+            # Step 1: 로그인
+            _st(f"로그인 중: {email}")
+            token = _api_login(email, password, url, proxy, _st, cancel_event)
+            _st("로그인 성공")
+
+            # Step 2: follow 요청
+            _chk(cancel_event)
+            _st("follow 요청 중...")
+            _api_follow(token, share_id, url, proxy, _st, cancel_event)
+            _st("보너스픽 완료!")
+            return
+
+        except AutoCancelled:
+            raise
+
+        except InvalidParameter as e:
+            raise
+
+        except LoginFailed as e:
+            last_error = e
+            _st(f"사이트 {idx + 1} 로그인 실패: {e}")
+
+        except Exception as e:
+            if "frequent" in str(e).lower():
+                raise
+            last_error = e
+            _st(f"사이트 {idx + 1} 실패: [{type(e).__name__}] {e}")
+
+        if idx < len(urls) - 1:
+            _st("다음 사이트로 재시도...")
+
+    raise RuntimeError(f"모든 사이트({len(urls)}개) 실패: {last_error}")

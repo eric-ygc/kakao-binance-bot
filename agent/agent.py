@@ -287,14 +287,25 @@ class PickAgent:
                     f.write(chunk)
             logger.info(f"다운로드 완료: {temp_path} ({temp_path.stat().st_size} bytes)")
 
-            # 2. 앱 종료
+            # 2. 앱 종료 (여러 번 시도)
             logger.info(f"앱 종료 시도: {exe_name}")
-            try:
-                subprocess.run(["taskkill", "/f", "/im", exe_name],
-                             capture_output=True, timeout=10)
-            except Exception:
-                pass
-            time.sleep(2)
+            for attempt in range(3):
+                try:
+                    subprocess.run(["taskkill", "/f", "/im", exe_name],
+                                 capture_output=True, timeout=10)
+                except Exception:
+                    pass
+                time.sleep(3)
+                # 프로세스 확인
+                try:
+                    result = subprocess.run(["tasklist", "/fi", f"imagename eq {exe_name}"],
+                                          capture_output=True, text=True, timeout=10)
+                    if exe_name.lower() not in result.stdout.lower():
+                        logger.info("앱 종료 확인")
+                        break
+                except Exception:
+                    pass
+                logger.info(f"앱 종료 재시도 ({attempt+1}/3)")
 
             # 3. 백업
             if exe_path.exists():

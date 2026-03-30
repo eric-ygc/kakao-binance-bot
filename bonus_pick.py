@@ -27,13 +27,24 @@ from version import VERSION
 from src.exceptions import AutoCancelled
 
 try:
+    from src.api_controller import click_no_more as click_no_more_api
+    BONUS_API_OK = True
+except ImportError:
+    BONUS_API_OK = False
+
+try:
     from src.browser_controller import click_no_more as click_no_more_selenium
     SELENIUM_OK = True
 except ImportError:
     SELENIUM_OK = False
 
-# 보너스픽은 현재 Selenium만 지원 (API 미구현)
-click_no_more = click_no_more_selenium if SELENIUM_OK else None
+# API 우선, Selenium 폴백
+if BONUS_API_OK:
+    click_no_more = click_no_more_api
+elif SELENIUM_OK:
+    click_no_more = click_no_more_selenium
+else:
+    click_no_more = None
 
 CONFIG_PATH   = BASE_DIR / "bonus_config.json"
 LOG_DATA_PATH = BASE_DIR / "bonus_log_data.json"
