@@ -158,14 +158,18 @@ class PickAgent:
 
             logger.info(f"명령 수신: {cmd_type} (id={cmd_id})")
 
-            # 스크린샷 명령은 에이전트가 직접 처리
+            # 에이전트가 직접 처리하는 명령
             if cmd_type == "screenshot":
                 self._capture_and_upload(cmd_id)
                 continue
-
-            # exe 업데이트 명령
             if cmd_type == "update_exe":
                 self._update_exe(cmd_id, payload)
+                continue
+            if cmd_type == "remote_click":
+                self._remote_click(cmd_id, payload)
+                continue
+            if cmd_type == "remote_key":
+                self._remote_key(cmd_id, payload)
                 continue
 
             # 나머지 명령은 commands.json에 기록하여 픽보조 앱이 처리
@@ -213,6 +217,41 @@ class PickAgent:
                 )
             except Exception:
                 pass
+
+    def _remote_click(self, command_id: int, payload: dict):
+        """원격 마우스 클릭"""
+        try:
+            import pyautogui
+            x = payload.get("x", 0)
+            y = payload.get("y", 0)
+            click_type = payload.get("click_type", "left")  # left, right, double
+            if click_type == "double":
+                pyautogui.doubleClick(x, y)
+            elif click_type == "right":
+                pyautogui.rightClick(x, y)
+            else:
+                pyautogui.click(x, y)
+            logger.info(f"원격 클릭: ({x}, {y}) {click_type}")
+            self._ack(command_id, True)
+        except Exception as e:
+            logger.error(f"원격 클릭 실패: {e}")
+            self._ack(command_id, False, str(e))
+
+    def _remote_key(self, command_id: int, payload: dict):
+        """원격 키보드 입력"""
+        try:
+            import pyautogui
+            text = payload.get("text", "")
+            key = payload.get("key", "")  # enter, tab, escape 등
+            if text:
+                pyautogui.typewrite(text, interval=0.02) if text.isascii() else pyautogui.write(text)
+            if key:
+                pyautogui.press(key)
+            logger.info(f"원격 키 입력: text='{text}' key='{key}'")
+            self._ack(command_id, True)
+        except Exception as e:
+            logger.error(f"원격 키 입력 실패: {e}")
+            self._ack(command_id, False, str(e))
 
     def _update_exe(self, command_id: int, payload: dict):
         """exe 다운로드 → 교체 → 앱 재시작"""

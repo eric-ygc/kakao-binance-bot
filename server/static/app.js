@@ -191,8 +191,26 @@ async function selectPC(id) {
                 <input id="manualCode" placeholder="코드 수동 입력" style="padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--fg);font-size:13px;width:140px">
                 <button class="btn btn-warn" onclick="sendCode('${id}')">전송</button>
                 <button class="btn btn-secondary" onclick="captureScreen('${id}')">📷 화면 캡처</button>
+                <button class="btn btn-secondary" onclick="startRemote('${id}')">🖥 원격 제어</button>
             </div>
             <div id="screenshotArea" style="margin-top:12px"></div>
+            <div id="remotePanel" style="display:none;margin-top:12px">
+                <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
+                    <button class="btn btn-secondary" onclick="stopRemote()">■ 원격 종료</button>
+                    <button class="btn btn-secondary" onclick="remoteRefresh()">🔄 새로고침</button>
+                    <select id="remoteClickType" style="padding:4px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--fg);font-size:12px">
+                        <option value="left">좌클릭</option>
+                        <option value="double">더블클릭</option>
+                        <option value="right">우클릭</option>
+                    </select>
+                    <input id="remoteKeyInput" placeholder="키보드 입력 후 Enter" style="padding:4px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--fg);font-size:12px;flex:1" onkeydown="if(event.key==='Enter')sendRemoteKey()">
+                    <button class="btn btn-secondary" onclick="sendRemoteKey()">⌨ 전송</button>
+                </div>
+                <div id="remoteScreen" style="position:relative;display:inline-block;cursor:crosshair">
+                    <img id="remoteImg" style="max-width:100%;border:1px solid var(--border);border-radius:4px" onclick="onRemoteClick(event)">
+                </div>
+                <div id="remoteStatus" style="color:var(--fg-dim);font-size:11px;margin-top:4px"></div>
+            </div>
         </div>
 
         <!-- 기본 설정 -->
@@ -656,6 +674,84 @@ async function sendCode(id) {
     });
     alert(`코드 ${code} 전송 완료`);
 }
+
+// ── 원격 제어 ─────────────────────────────────────────────────────────
+
+let remoteInterval = null;
+let remotePC = null;
+
+function startRemote(id) {
+    remotePC = id;
+    document.getElementById("remotePanel").style.display = "block";
+    document.getElementById("screenshotArea").style.display = "none";
+    document.getElementById("remoteStatus").textContent = "연결 중...";
+    remoteRefresh();
+    // 2초마다 자동 갱신
+    remoteInterval = setInterval(remoteRefresh, 2000);
+}
+
+function stopRemote() {
+    if (remoteInterval) clearInterval(remoteInterval);
+    remoteInterval = null;
+    remotePC = null;
+    document.getElementById("remotePanel").style.display = "none";
+    document.getElementById("screenshotArea").style.display = "block";
+}
+
+async function remoteRefresh() {
+    if (!remotePC) return;
+    try {
+        await api("POST", `/api/computers/${remotePC}/command`, { command_type: "screenshot" });
+        // 1.5초 후 스크린샷 가져오기
+        setTimeout(async () => {
+            try {
+                const data = await api("GET", `/api/computers/${remotePC}/screenshot`);
+                if (data.image_base64) {
+                    const img = document.getElementById("remoteImg");
+                    img.src = `data:image/png;base64,${data.image_base64}`;
+                    document.getElementById("remoteStatus").textContent =
+                        `마지막 갱신: ${new Date(data.captured_at).toLocaleString()}`;
+                }
+            } catch (e) {}
+        }, 1500);
+    } catch (e) {}
+}
+
+async function onRemoteClick(event) {
+    if (!remotePC) return;
+    const img = event.target;
+    const rect = img.getBoundingClientRect();
+    // 이미지 표시 크기와 실제 해상도 비율 계산
+    const scaleX = img.naturalWidth / rect.width;
+    const scaleY = img.naturalHeight / rect.height;
+    const x = Math.round((event.clientX - rect.left) * scaleX);
+    const y = Math.round((event.clientY - rect.top) * scaleY);
+    const clickType = document.getElementById("remoteClickType").value;
+
+    document.getElementById("remoteStatus").textContent = `클릭 전송: (${x}, ${y}) ${clickType}`;
+    await api("POST", `/api/computers/${remotePC}/command`, {
+        command_type: "remote_click",
+        payload: { x, y, click_type: clickType },
+    });
+    // 클릭 후 화면 갱신
+    setTimeout(remoteRefresh, 500);
+}
+
+async function sendRemoteKey() {
+    if (!remotePC) return;
+    const input = document.getElementById("remoteKeyInput");
+    const text = input.value;
+    if (!text) return;
+    input.value = "";
+
+    document.getElementById("remoteStatus").textContent = `키 입력 전송: "${text}"`;
+    await api("POST", `/api/computers/${remotePC}/command`, {
+        command_type: "remote_key",
+        payload: { text: text },
+    });
+    setTimeout(remoteRefresh, 500);
+}
+
 
 async function captureScreen(id) {
     const area = document.getElementById("screenshotArea");
