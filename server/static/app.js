@@ -829,10 +829,11 @@ function closeModal(id) {
 function showUpdateModal() {
     const onlinePCs = computers.filter(c => c.is_online);
     const pcChecks = onlinePCs.map(c => `
-        <label style="display:block;margin:4px 0">
-            <input type="checkbox" class="update-pc" value="${c.id}" checked>
-            ${c.display_name || c.id} (${c.app_version || '?'})
-        </label>
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;margin:4px 0;background:var(--surface2);border-radius:4px">
+            <input type="checkbox" class="update-pc" value="${c.id}" checked style="width:18px;height:18px">
+            <span style="flex:1;font-size:13px;color:var(--fg)">${c.display_name || c.id}</span>
+            <span style="font-size:11px;color:var(--fg-dim)">현재: ${c.app_version || '?'}</span>
+        </div>
     `).join("");
 
     const modal = document.getElementById("updateModal");
