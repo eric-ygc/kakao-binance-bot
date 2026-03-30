@@ -835,9 +835,9 @@ function showUpdateModal() {
         </label>
     `).join("");
 
-    const modal = document.getElementById("addPCModal");
+    const modal = document.getElementById("updateModal");
     modal.classList.add("show");
-    modal.querySelector(".modal-content").innerHTML = `
+    document.getElementById("updateModalContent").innerHTML = `
         <h3>업데이트 배포</h3>
         <div class="form-grid" style="margin:12px 0">
             <label>다운로드 URL</label>
@@ -852,7 +852,7 @@ function showUpdateModal() {
             ${pcChecks || '<p class="text-dim">온라인 PC 없음</p>'}
         </div>
         <div class="btn-group" style="justify-content:flex-end">
-            <button class="btn btn-secondary" onclick="document.getElementById('addPCModal').classList.remove('show')">취소</button>
+            <button class="btn btn-secondary" onclick="document.getElementById('updateModal').classList.remove('show')">취소</button>
             <button class="btn btn-primary" onclick="deployUpdate()">배포 시작</button>
         </div>
     `;
@@ -879,7 +879,7 @@ async function deployUpdate() {
         } catch (e) { /* skip */ }
     }
 
-    document.getElementById("addPCModal").classList.remove("show");
+    document.getElementById("updateModal").classList.remove("show");
     alert(`${sent}대 PC에 업데이트 명령 전송 완료!\n에이전트가 다운로드 → 교체 → 재시작합니다.`);
 }
 
