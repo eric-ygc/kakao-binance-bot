@@ -163,6 +163,11 @@ class PickAgent:
                 self._capture_and_upload(cmd_id)
                 continue
 
+            # exe 업데이트 명령
+            if cmd_type == "update_exe":
+                self._update_exe(cmd_id, payload)
+                continue
+
             # 나머지 명령은 commands.json에 기록하여 픽보조 앱이 처리
             local_cmds.append({
                 "id": cmd_id,
@@ -208,6 +213,88 @@ class PickAgent:
                 )
             except Exception:
                 pass
+
+    def _update_exe(self, command_id: int, payload: dict):
+        """exe 다운로드 → 교체 → 앱 재시작"""
+        import subprocess
+        import shutil
+
+        download_url = payload.get("download_url", "")
+        version = payload.get("version", "")
+        exe_name = payload.get("exe_name", "")
+
+        if not download_url:
+            logger.error("업데이트 URL 없음")
+            self._ack(command_id, False, "download_url 없음")
+            return
+
+        # exe 경로 결정
+        if not exe_name:
+            # agent_config에서 exe_name 읽기 또는 기본값
+            cfg = load_agent_config()
+            exe_name = cfg.get("exe_name", "픽보조_Selenium.exe")
+
+        exe_path = BASE_DIR / exe_name
+        backup_path = BASE_DIR / f"{exe_name}.backup"
+        temp_path = BASE_DIR / f"{exe_name}.new"
+
+        try:
+            # 1. 다운로드
+            logger.info(f"업데이트 다운로드 시작: {download_url}")
+            resp = requests.get(download_url, stream=True, timeout=300)
+            resp.raise_for_status()
+            with open(temp_path, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            logger.info(f"다운로드 완료: {temp_path} ({temp_path.stat().st_size} bytes)")
+
+            # 2. 앱 종료
+            logger.info(f"앱 종료 시도: {exe_name}")
+            try:
+                subprocess.run(["taskkill", "/f", "/im", exe_name],
+                             capture_output=True, timeout=10)
+            except Exception:
+                pass
+            time.sleep(2)
+
+            # 3. 백업
+            if exe_path.exists():
+                shutil.copy2(exe_path, backup_path)
+                logger.info(f"백업 완료: {backup_path}")
+
+            # 4. 교체
+            shutil.move(str(temp_path), str(exe_path))
+            logger.info(f"교체 완료: {exe_path}")
+
+            # 5. 앱 재시작
+            subprocess.Popen([str(exe_path)], cwd=str(BASE_DIR))
+            logger.info(f"앱 재시작: {exe_path}")
+
+            # 6. ACK
+            self._ack(command_id, True, f"업데이트 완료: v{version}")
+            logger.info(f"업데이트 성공: v{version}")
+
+        except Exception as e:
+            logger.error(f"업데이트 실패: {e}")
+            # 롤백
+            if backup_path.exists() and not exe_path.exists():
+                shutil.move(str(backup_path), str(exe_path))
+                logger.info("롤백 완료")
+            # 임시 파일 정리
+            if temp_path.exists():
+                temp_path.unlink()
+            self._ack(command_id, False, str(e))
+
+    def _ack(self, command_id: int, success: bool, message: str = ""):
+        """명령 ACK 전송"""
+        try:
+            self.session.post(
+                f"{self.server_url}/api/agent/command/{command_id}/ack",
+                json={"success": success, "message": message},
+                timeout=10,
+            )
+        except Exception as e:
+            logger.error(f"ACK 전송 실패: {e}")
 
     def report_code(self, code: str, total: int, success: int, fail: int):
         """코드 제출 결과 보고"""

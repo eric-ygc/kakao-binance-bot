@@ -195,6 +195,14 @@ class App(tk.Frame):
         self._proxies: list = list(cfg.get("proxies", []))
         self._app_password: str = cfg.get("app_password", "")
 
+        # 시작 시 이전 명령 제거
+        try:
+            if COMMANDS_PATH.exists():
+                with open(COMMANDS_PATH, "w", encoding="utf-8") as f:
+                    json.dump([], f)
+        except Exception:
+            pass
+
         self._apply_dark_theme()
         self._build_ui(cfg)
         self._load_log_data()
@@ -1408,7 +1416,7 @@ class App(tk.Frame):
                         self._msg_queue.put(("error", f"✗ 재시도 실패: {acct_label_r} [{type(e).__name__}] — {e}"))
 
                     if r_idx < retry_total - 1:
-                        retry_delay = STAGGER_DELAY_API_RETRY if API_OK else STAGGER_DELAY
+                        retry_delay = STAGGER_DELAY_API_RETRY
                         if self._auto_cancel_event.wait(retry_delay):
                             break
 

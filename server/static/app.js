@@ -124,6 +124,7 @@ function renderOverview() {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
             <h2 style="font-size:16px">전체 현황 (${computers.length}대)</h2>
             <button class="btn btn-warn" onclick="showDistribute()">계정 분배</button>
+            <button class="btn btn-secondary" onclick="showUpdateModal()">업데이트 배포</button>
         </div>
         <div class="detail-section" style="margin-bottom:16px">
             <h3>코드 일괄 전송 (온라인 ${onlineCount}대)</h3>
@@ -726,6 +727,66 @@ function closeModal(id) {
 }
 
 // ── 계정 분배 ─────────────────────────────────────────────────────────
+
+// ── 업데이트 배포 ─────────────────────────────────────────────────────
+
+function showUpdateModal() {
+    const onlinePCs = computers.filter(c => c.is_online);
+    const pcChecks = onlinePCs.map(c => `
+        <label style="display:block;margin:4px 0">
+            <input type="checkbox" class="update-pc" value="${c.id}" checked>
+            ${c.display_name || c.id} (${c.app_version || '?'})
+        </label>
+    `).join("");
+
+    const modal = document.getElementById("addPCModal");
+    modal.classList.add("show");
+    modal.querySelector(".modal-content").innerHTML = `
+        <h3>업데이트 배포</h3>
+        <div class="form-grid" style="margin:12px 0">
+            <label>다운로드 URL</label>
+            <input id="updateUrl" placeholder="https://github.com/.../픽보조_Selenium.exe" style="grid-column:span 1">
+            <label>exe 파일명</label>
+            <input id="updateExeName" placeholder="픽보조_Selenium.exe" value="픽보조_Selenium.exe">
+            <label>버전</label>
+            <input id="updateVersion" placeholder="1.4.9">
+        </div>
+        <div style="margin:12px 0">
+            <strong>대상 PC (온라인 ${onlinePCs.length}대)</strong>
+            ${pcChecks || '<p class="text-dim">온라인 PC 없음</p>'}
+        </div>
+        <div class="btn-group" style="justify-content:flex-end">
+            <button class="btn btn-secondary" onclick="document.getElementById('addPCModal').classList.remove('show')">취소</button>
+            <button class="btn btn-primary" onclick="deployUpdate()">배포 시작</button>
+        </div>
+    `;
+}
+
+async function deployUpdate() {
+    const url = document.getElementById("updateUrl").value.trim();
+    const exeName = document.getElementById("updateExeName").value.trim();
+    const version = document.getElementById("updateVersion").value.trim();
+
+    if (!url) return alert("다운로드 URL을 입력하세요");
+
+    const checked = document.querySelectorAll(".update-pc:checked");
+    if (checked.length === 0) return alert("대상 PC를 선택하세요");
+
+    let sent = 0;
+    for (const cb of checked) {
+        try {
+            await api("POST", `/api/computers/${cb.value}/command`, {
+                command_type: "update_exe",
+                payload: { download_url: url, exe_name: exeName, version: version },
+            });
+            sent++;
+        } catch (e) { /* skip */ }
+    }
+
+    document.getElementById("addPCModal").classList.remove("show");
+    alert(`${sent}대 PC에 업데이트 명령 전송 완료!\n에이전트가 다운로드 → 교체 → 재시작합니다.`);
+}
+
 
 function showDistribute() {
     document.getElementById("distModal").classList.add("show");
