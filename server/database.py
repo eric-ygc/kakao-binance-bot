@@ -21,6 +21,7 @@ def _migrate_columns():
     """기존 테이블에 새 컬럼 추가 (없으면 무시)"""
     migrations = [
         ("computer_status", "recent_logs", "TEXT DEFAULT '[]'"),
+        ("computer_status", "agent_version", "TEXT DEFAULT ''"),
         ("screenshots", "computer_id", None),  # 새 테이블 체크용
     ]
     with engine.connect() as conn:

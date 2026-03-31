@@ -183,7 +183,8 @@ async function selectPC(id) {
             <div class="stat-row"><span>자동입력</span><span class="val">${data.status.auto_input_active ? '실행 중' : '대기'}</span></div>
             <div class="stat-row"><span>성공 / 실패</span><span class="val"><span class="text-ok">${data.status.success_count}</span> / <span class="text-err">${data.status.fail_count}</span></span></div>
             <div class="stat-row"><span>최근 코드</span><span class="val">${data.status.last_code || '-'}</span></div>
-            <div class="stat-row"><span>버전</span><span class="val">${data.status.app_version || '-'}</span></div>
+            <div class="stat-row"><span>앱 버전</span><span class="val">${data.status.app_version || '-'}</span></div>
+            <div class="stat-row"><span>에이전트</span><span class="val">${data.status.agent_version || '-'}</span></div>
             <div class="stat-row"><span>API 키</span><span class="val" style="font-family:Consolas;font-size:11px">${data.api_key}</span></div>
             <div class="btn-group">
                 <button class="btn btn-primary" onclick="sendCmd('${id}','start_monitor')">▶ 모니터링 시작</button>

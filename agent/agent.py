@@ -1,4 +1,5 @@
 """픽보조 에이전트 — 서버와 로컬 앱 사이 중계"""
+AGENT_VERSION = "1.0.0"  # 에이전트 버전
 import base64
 import io
 import json
@@ -112,6 +113,7 @@ class PickAgent:
                 "success_count": status.get("success_count", 0),
                 "fail_count": status.get("fail_count", 0),
                 "app_version": status.get("app_version", ""),
+                "agent_version": AGENT_VERSION,
                 "account_count": status.get("account_count", 0),
                 "enabled_account_count": status.get("enabled_account_count", 0),
                 "recent_logs": status.get("recent_logs", []),
@@ -316,11 +318,19 @@ class PickAgent:
             shutil.move(str(temp_path), str(exe_path))
             logger.info(f"교체 완료: {exe_path}")
 
-            # 5. 앱 재시작
+            # 5. commands.json 비우기 (이전 명령 실행 방지)
+            try:
+                with open(COMMANDS_PATH, "w", encoding="utf-8") as f:
+                    json.dump([], f)
+                logger.info("commands.json 초기화")
+            except Exception:
+                pass
+
+            # 6. 앱 재시작
             subprocess.Popen([str(exe_path)], cwd=str(BASE_DIR))
             logger.info(f"앱 재시작: {exe_path}")
 
-            # 6. ACK
+            # 7. ACK
             self._ack(command_id, True, f"업데이트 완료: v{version}")
             logger.info(f"업데이트 성공: v{version}")
 
