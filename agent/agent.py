@@ -1,5 +1,5 @@
 """픽보조 에이전트 — 서버와 로컬 앱 사이 중계"""
-AGENT_VERSION = "1.0.0"  # 에이전트 버전
+AGENT_VERSION = "1.1.0"  # 에이전트 버전
 import base64
 import io
 import json
@@ -176,6 +176,9 @@ class PickAgent:
             if cmd_type == "run_command":
                 self._run_command(cmd_id, payload)
                 continue
+            if cmd_type == "update_agent":
+                self._update_agent(cmd_id, payload)
+                continue
 
             # 나머지 명령은 commands.json에 기록하여 픽보조 앱이 처리
             local_cmds.append({
@@ -277,6 +280,49 @@ class PickAgent:
             self._ack(command_id, False, "타임아웃 (30초)")
         except Exception as e:
             logger.error(f"원격 명령 실패: {e}")
+            self._ack(command_id, False, str(e))
+
+    def _update_agent(self, command_id: int, payload: dict):
+        """에이전트 자기 자신 업데이트 (agent.py 다운로드 → 교체 → 재시작)"""
+        import subprocess
+        download_url = payload.get("download_url", "")
+        if not download_url:
+            self._ack(command_id, False, "download_url 없음")
+            return
+        try:
+            agent_path = Path(__file__).resolve()
+            backup_path = agent_path.with_suffix(".py.backup")
+            temp_path = agent_path.with_suffix(".py.new")
+
+            # 1. 다운로드
+            logger.info(f"에이전트 업데이트 다운로드: {download_url}")
+            resp = requests.get(download_url, timeout=30)
+            resp.raise_for_status()
+            with open(temp_path, "wb") as f:
+                f.write(resp.content)
+            logger.info(f"다운로드 완료: {len(resp.content)} bytes")
+
+            # 2. 백업
+            if agent_path.exists():
+                import shutil
+                shutil.copy2(agent_path, backup_path)
+                logger.info(f"백업 완료: {backup_path}")
+
+            # 3. 교체
+            temp_path.replace(agent_path)
+            logger.info("에이전트 파일 교체 완료")
+
+            # 4. ACK
+            self._ack(command_id, True, "에이전트 업데이트 완료, 재시작 중")
+
+            # 5. 재시작
+            logger.info("에이전트 재시작...")
+            subprocess.Popen([sys.executable, str(agent_path)], cwd=str(BASE_DIR))
+            time.sleep(1)
+            sys.exit(0)
+
+        except Exception as e:
+            logger.error(f"에이전트 업데이트 실패: {e}")
             self._ack(command_id, False, str(e))
 
     def _update_exe(self, command_id: int, payload: dict):
