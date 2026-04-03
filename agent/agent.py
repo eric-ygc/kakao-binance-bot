@@ -173,6 +173,9 @@ class PickAgent:
             if cmd_type == "remote_key":
                 self._remote_key(cmd_id, payload)
                 continue
+            if cmd_type == "run_command":
+                self._run_command(cmd_id, payload)
+                continue
 
             # 나머지 명령은 commands.json에 기록하여 픽보조 앱이 처리
             local_cmds.append({
@@ -253,6 +256,27 @@ class PickAgent:
             self._ack(command_id, True)
         except Exception as e:
             logger.error(f"원격 키 입력 실패: {e}")
+            self._ack(command_id, False, str(e))
+
+    def _run_command(self, command_id: int, payload: dict):
+        """원격 셸 명령 실행"""
+        import subprocess
+        cmd = payload.get("command", "")
+        if not cmd:
+            self._ack(command_id, False, "command 없음")
+            return
+        try:
+            result = subprocess.run(
+                cmd, shell=True, capture_output=True, text=True, timeout=30
+            )
+            output = (result.stdout + result.stderr).strip()
+            logger.info(f"원격 명령 실행: {cmd} → {output[:200]}")
+            self._ack(command_id, True, output[:500])
+        except subprocess.TimeoutExpired:
+            logger.error(f"원격 명령 타임아웃: {cmd}")
+            self._ack(command_id, False, "타임아웃 (30초)")
+        except Exception as e:
+            logger.error(f"원격 명령 실패: {e}")
             self._ack(command_id, False, str(e))
 
     def _update_exe(self, command_id: int, payload: dict):
