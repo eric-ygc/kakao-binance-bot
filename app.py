@@ -138,15 +138,20 @@ def load_config() -> dict:
 
 
 _last_self_save_mtime: float = 0  # 앱 자체 저장 후 mtime 기록
+_config_lock = threading.Lock()    # save_config 동시 호출 방지
 
 def save_config(cfg: dict) -> None:
     global _last_self_save_mtime
-    try:
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, ensure_ascii=False, indent=2)
-        _last_self_save_mtime = CONFIG_PATH.stat().st_mtime
-    except Exception as e:
-        logger.warning(f"설정 저장 실패: {e}")
+    with _config_lock:
+        try:
+            # 원자적 저장: 임시 파일에 쓴 뒤 교체
+            tmp_path = CONFIG_PATH.with_suffix(".tmp")
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, ensure_ascii=False, indent=2)
+            tmp_path.replace(CONFIG_PATH)
+            _last_self_save_mtime = CONFIG_PATH.stat().st_mtime
+        except Exception as e:
+            logger.warning(f"설정 저장 실패: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -1118,6 +1123,8 @@ class App(tk.Frame):
                 elif cmd_type == "submit_code":
                     code = payload.get("code", "")
                     if code and CODE_PATTERN.match(code):
+                        # 원격 명령은 중복 체크 초기화 (대시보드 수동 재전송 허용)
+                        self._processed_codes.discard(code)
                         self._append_log(f"📡 원격 코드 수신: {code}", tag="system")
                         self._update_catch_panel(code, "원격", "서버")
         except Exception as e:
@@ -1259,6 +1266,9 @@ class App(tk.Frame):
             "code": code, "ts": ts, "sender": sender,
             "datetime": datetime.datetime.now().isoformat(timespec="seconds"),
         })
+        # 메모리 누수 방지: 최대 1000개 유지
+        if len(self._caught_codes_full) > 1000:
+            self._caught_codes_full = self._caught_codes_full[-1000:]
         current = self._latest_code_var.get()
         if current != "—":
             self._caught_history.insert(0, current)
@@ -1452,6 +1462,10 @@ class App(tk.Frame):
             self._log_lines = self._log_lines[-10000:]
         self._log.config(state=tk.NORMAL)
         self._log.insert(tk.END, text + "\n", tag if tag else ())
+        # Text 위젯 메모리 관리: 5000줄 초과 시 오래된 줄 삭제
+        line_count = int(self._log.index("end-1c").split(".")[0])
+        if line_count > 5000:
+            self._log.delete("1.0", f"{line_count - 5000}.0")
         self._log.see(tk.END)
         self._log.config(state=tk.DISABLED)
 
@@ -1495,14 +1509,16 @@ class App(tk.Frame):
                 f"이전 코드 복원: {latest['code']}  ({latest.get('datetime','')[:10]})")
 
     def _save_log_data(self) -> None:
-        """종료 시 log_data.json에 로그·캐치 코드 저장."""
+        """종료 시 log_data.json에 로그·캐치 코드 저장 (원자적)."""
         try:
             data = {
                 "caught_codes": self._caught_codes_full,
                 "log_lines":    self._log_lines[-10000:],
             }
-            with open(LOG_DATA_PATH, "w", encoding="utf-8") as f:
+            tmp_path = LOG_DATA_PATH.with_suffix(".tmp")
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+            tmp_path.replace(LOG_DATA_PATH)
         except Exception as e:
             logger.warning(f"로그 데이터 저장 실패: {e}")
 

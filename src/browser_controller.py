@@ -73,6 +73,7 @@ def _chk(cancel_event) -> None:
 
 
 _driver_count = 0  # 창 위치 오프셋용 카운터
+_proxy_ext_paths: list = []  # 프록시 확장 임시파일 경로 (정리용)
 
 def _open_driver(status_cb=None, proxy: str = "") -> uc.Chrome:
     """undetected-chromedriver로 Chrome을 실행하고 WebDriver 반환 (봇 감지 우회)."""
@@ -94,6 +95,7 @@ def _open_driver(status_cb=None, proxy: str = "") -> uc.Chrome:
         # host:port:user:pass — 인증 프록시 (Chrome 확장으로 처리)
         host, port, user, pwd = proxy_parts
         ext_path = _make_proxy_auth_ext(host, port, user, pwd)
+        _proxy_ext_paths.append(ext_path)
         options.add_extension(ext_path)
         _st(f"프록시 적용 (인증): {host}:{port}")
     elif len(proxy_parts) == 2:
@@ -104,12 +106,22 @@ def _open_driver(status_cb=None, proxy: str = "") -> uc.Chrome:
     driver = uc.Chrome(options=options, version_main=146)
     # h5 모바일 레이아웃으로 렌더링 (로그인 버튼 등이 화면 안에 표시됨)
     driver.set_window_size(480, 1020)
-    # 창 겹침 방지: 가로 4열 배치
+    # 창 겹침 방지: 가로 4열 배치 (16 이후 리셋)
     col = _driver_count % 4
     driver.set_window_position(col * 480, 0)
-    _driver_count += 1
+    _driver_count = (_driver_count + 1) % 16
     _st("Chrome 실행 완료")
     return driver
+
+
+def _cleanup_proxy_exts() -> None:
+    """프록시 확장 임시파일 정리."""
+    while _proxy_ext_paths:
+        path = _proxy_ext_paths.pop()
+        try:
+            os.remove(path)
+        except Exception:
+            pass
 
 
 def _js_click(driver, el) -> None:
@@ -472,6 +484,7 @@ def submit_order_code(
                 logger.info("Chrome 종료")
             except Exception:
                 pass
+            _cleanup_proxy_exts()
         if idx < len(urls) - 1:
             _st("다음 사이트로 재시도...")
 
@@ -615,6 +628,7 @@ def click_no_more(
                 logger.info("Chrome 종료")
             except Exception:
                 pass
+            _cleanup_proxy_exts()
         if idx < len(urls) - 1:
             _st("다음 사이트로 재시도...")
 

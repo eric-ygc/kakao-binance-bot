@@ -116,13 +116,15 @@ def _api_login(
     if resp.status_code == 429:
         raise RuntimeError(f"429 Too Many Requests ({email})")
 
-    data = resp.json()
+    try:
+        data = resp.json()
+    except Exception:
+        raise RuntimeError(f"로그인 응답 파싱 실패 (status={resp.status_code})")
+
     if data.get("resultCode"):
         return data["data"]  # 토큰
 
     err_msg = data.get("errCodeDes", str(data))
-    if "not exist" in err_msg.lower() or "password" in err_msg.lower():
-        raise LoginFailed(f"{err_msg} ({email})")
     raise LoginFailed(f"{err_msg} ({email})")
 
 
@@ -151,7 +153,11 @@ def _api_submit_code(
     except Exception as e:
         raise RuntimeError(f"코드 제출 연결 실패: {e}")
 
-    data = resp.json()
+    try:
+        data = resp.json()
+    except Exception:
+        raise RuntimeError(f"코드 제출 응답 파싱 실패 (status={resp.status_code})")
+
     if data.get("resultCode"):
         return  # 성공
 
@@ -266,7 +272,11 @@ def _api_follow(
     except Exception as e:
         raise RuntimeError(f"follow 연결 실패: {e}")
 
-    data = resp.json()
+    try:
+        data = resp.json()
+    except Exception:
+        raise RuntimeError(f"follow 응답 파싱 실패 (status={resp.status_code})")
+
     if data.get("resultCode"):
         return  # 성공
 

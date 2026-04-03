@@ -1,0 +1,149 @@
+================================================
+  작업내역 2026-04-04 00:00 ~ 02:30
+================================================
+
+1. 시스템모니터 백그라운드 코드 처리
+------------------------------------------------
+- 문제: 가짜 화면에서 코드 명령을 처리 안 함
+- 수정: 백그라운드에서 App 로드하여 코드 처리
+- 시스템모니터 Selenium 버전으로 재빌드 (curl_cffi 제외)
+
+2. 원격 코드 중복 허용
+------------------------------------------------
+- 문제: 대시보드에서 수동 재전송해도 중복 코드라고 무시
+- 수정: 원격 명령(commands.json)은 _processed_codes에서 제거 후 실행
+- API A.2.0.2 / Selenium S.1.0.2
+
+3. CodeGPT 리뷰 반영 (system_monitor.py)
+------------------------------------------------
+- 타이머 누적 방지: after_cancel() 추가
+- 앱 인스턴스 정리: _on_close() 호출 + destroy()
+- if문 논리 정리: _switch_to_real() 수정
+- 미사용 import 제거: os, threading, time
+- 미사용 변수 제거: _msg_queue
+
+4. pickmob 코드 패턴 강화
+------------------------------------------------
+- 문제: Odette930, Rafael001 등 사람 이름이 코드로 감지됨
+- 수정: 숫자로 시작 + 대문자+숫자 9자리만 매칭
+- 발신자 필터 강화: 2단계 근접 + 깊이 2
+- 픽보조모바일 v1.4.6
+
+5. 서버: 5분 이상 오래된 submit_code 명령 자동 만료
+------------------------------------------------
+- 이전 코드로 실행되는 문제 방지
+- GitHub push → Railway 자동 배포
+
+6. GitHub Release 생성
+------------------------------------------------
+- SM.1.0.1 (시스템모니터 Selenium 버전)
+- S.1.0.2 (Selenium)
+- A.2.0.2 (API)
+
+7. 엑셀 파일 생성
+------------------------------------------------
+- 차대표여수신규.txt → 차대표여수신규.xlsx (이름/전화번호/이메일)
+
+수정된 파일
+------------------------------------------------
+- app.py — 원격 코드 중복 허용
+- version.py — A.2.0.2 / S.1.0.2
+- server/routers/agent.py — 5분 만료 규칙
+- 시스템모니터_원거리/system_monitor.py — 리뷰 반영 + 백그라운드 처리 + 버전 표시
+- pickmob: Constants.kt, MyAccessibilityService.kt, build.gradle
+
+================================================
+  작업내역 2026-04-04 02:30 ~ (계속)
+================================================
+
+8. app.py 코드 리뷰 반영 (P0 수정)
+------------------------------------------------
+- save_config에 threading.Lock 추가 (멀티스레드 동시 쓰기 방지)
+- save_config, _save_log_data 원자적 저장 (.tmp → replace)
+- _caught_codes_full 최대 1000개 제한 (메모리 누수 방지)
+- Text 위젯 5000줄 초과 시 오래된 줄 삭제
+- 버전 A.2.0.3 / S.1.0.3
+
+9. src/api_controller.py 리뷰 + 수정
+------------------------------------------------
+- resp.json() 3곳에 try/except 추가 (비정상 응답 크래시 방지)
+- _api_login 중복 raise 제거 (코드 정리)
+
+10. src/browser_controller.py 리뷰 + 수정
+------------------------------------------------
+- 프록시 확장 임시파일(.zip) 자동 삭제 (_cleanup_proxy_exts)
+- _driver_count 16 이후 리셋 (창 위치 화면 밖 방지)
+
+11. 양쪽 exe 빌드
+------------------------------------------------
+- API: dist/픽보조.exe (A.2.0.3)
+- Selenium: dist/Selenium백업(v1.4)/픽보조_Selenium.exe (S.1.0.3)
+
+12. pickmob 전체 리뷰 + 수정 (v1.4.7)
+------------------------------------------------
+[MyAccessibilityService.kt]
+- rootNode try-finally 패턴 (recycle 보장)
+- @Volatile 추가 (companion 변수 4개)
+- findAndClickRoom 깊이 제한 (maxDepth=20)
+- broadcastToServer finally disconnect
+- isInRange 예외 시 false 반환 (true→false)
+- diagLogCount 순환 (% 1000)
+- 데드코드 3개 제거 (findCodeInNode, isWithinSchedule, tryNavigateToRoom)
+- lastClickTime 미사용 변수 제거
+
+[MainActivity.kt]
+- AppState 콜백에 isFinishing/isDestroyed 체크
+- onDestroy에서 콜백 4개 null 해제 (Activity 메모리 누수 차단)
+- HttpURLConnection finally disconnect 4곳
+- appendLog 200줄 제한 (TextView 메모리 관리)
+- onManualCodeSubmit finally disconnect
+
+[RelayService.kt]
+- onDestroy에서 스레드 join(5000) 대기
+- loopCount 순환 (% 10000)
+- scheduleLogCount 순환 (% 1000)
+- HttpURLConnection finally disconnect 4곳
+
+[WebServer.kt]
+- saveSettings JSON 파싱: Regex → JSONObject
+- serveSettings 수동 문자열 → JSONObject
+- serveLogs 수동 조립 → JSONArray
+
+[build.gradle]
+- v1.4.7 (versionCode 31)
+
+13. CodeGPT 리뷰 병행
+------------------------------------------------
+- MyAccessibilityService.kt: CodeGPT 리뷰 완료 → 유효 항목 반영
+- MainActivity.kt 파트1: CodeGPT 리뷰 완료 → 유효 항목 반영
+- MainActivity.kt 파트2: CodeGPT 리뷰 완료 → 유효 항목 반영
+- RelayService.kt: CodeGPT 멈춤 → 직접 처리
+- CodeGPT 과잉 분석 항목 필터링 (실질적 문제만 수정)
+
+수정된 파일
+------------------------------------------------
+[kakao-binance-bot]
+- app.py — Lock, 원자적 저장, 메모리 제한
+- version.py — A.2.0.3 / S.1.0.3
+- src/api_controller.py — resp.json() 안전 처리
+- src/browser_controller.py — 임시파일 삭제, 카운터 리셋
+
+[pickmob]
+- MyAccessibilityService.kt — try-finally, @Volatile, 깊이제한, 데드코드 제거
+- MainActivity.kt — 콜백 누수 차단, disconnect, 로그 제한
+- RelayService.kt — join 대기, 카운터 순환, disconnect
+- WebServer.kt — JSON 안전 파싱/조립
+- build.gradle — v1.4.7
+
+대화 요약
+------------------------------------------------
+- 시스템모니터 가짜 화면에서 코드 처리 안 됨 → 백그라운드 App 로드로 해결
+- 중복 코드 무시 문제 → 원격 명령은 중복 체크 건너뛰기
+- pickmob 가짜 코드 감지 → 패턴 강화 (숫자시작+대문자) + 발신자 필터 강화
+- CodeGPT 리뷰 반영: 타이머 누수, 메모리 정리, 미사용 코드 제거
+- 시스템모니터 API→Selenium 버전으로 수정
+- CodeGPT 3파일 동시 리뷰 시 멈춤 → 하나씩 해야 함
+- app.py + api_controller + browser_controller 리뷰 + 수정 + 빌드 완료
+- pickmob 전체 10개 파일 리뷰 + 8개 파일 수정 완료
+- CodeGPT와 Claude 병행 리뷰: CodeGPT 유효 항목만 선별 반영
+- CodeGPT 대용량 파일 멈춤 → 400줄 이하로 나눠야 함
