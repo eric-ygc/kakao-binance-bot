@@ -1,0 +1,92 @@
+================================================
+  작업내역 2026-04-05
+================================================
+
+1. pickmob 코드 추출 실패 디버깅
+------------------------------------------------
+- 원인: 시작 버튼이 AppState.isMonitoring = true를 설정하지 않았음
+- 슬롯 스케줄러만 isMonitoring을 설정 → 슬롯 시간 외 수동 시작 불가
+- onStartMonitoring에 AppState.isMonitoring = true 추가 (v1.5.1)
+
+2. pickmob 채팅방 자동 진입 실패 수정
+------------------------------------------------
+- 본채트가 포그라운드에서 밀리면 접근성 이벤트 중단
+- RelayService에 retryNavigateIfNeeded() 추가: 10초마다 본채트 재실행 (v1.4.8)
+
+3. pickmob 접근성 서비스 진단 로그 추가
+------------------------------------------------
+- onAccessibilityEvent 진입 시 이벤트 수신 로그 (50개마다 1회)
+- rootNode null 체크 로그
+- v1.4.9 → v1.5.0 → v1.5.1
+
+4. pickmob 고정 메시지 코드 감지 제외
+------------------------------------------------
+- "고정 메시지" / "pinned" 텍스트 근처 노드 무시
+- isNearPinnedMessage() 함수 추가 (부모 3단계 검색)
+- v1.5.2 → v1.5.3
+
+5. 에이전트 기능 추가 (v1.1.0 → v1.1.3)
+------------------------------------------------
+- run_command: 원격 셸 명령 실행 (taskkill 등)
+- update_agent: 에이전트 자체 업데이트 (.pending 다운로드, 다음 재시작 시 적용)
+- update_exe 안전장치: 에이전트 자신을 update_exe로 업데이트 시도 시 거부
+- 파일 잠금 재시도 (5초 대기 + 3회 재시도)
+- 서버: 5분 이상 오래된 모든 pending 명령 자동 만료
+
+6. 에이전트 자동 업데이트 시도 및 문제
+------------------------------------------------
+- bat 스크립트 재시작 방식 실패 (subprocess.Popen, os.startfile 모두 실패)
+- 최종: .pending 다운로드만 하고 다음 재시작 시 apply_pending_update()로 자동 교체
+- 1.0.0 PC는 update_agent 미지원 → 현장 방문 시 수동 교체 필요
+
+7. 대시보드 개선
+------------------------------------------------
+- PC 목록에 에이전트 버전 표시 추가
+- 업데이트 모달에 "앱 배포 / 에이전트 배포" 탭 추가
+- 보너스픽 워커 수 조절 UI 추가
+
+8. 보너스픽 수정
+------------------------------------------------
+- API 우선 → Selenium 우선 전환 (API 429 차단 대응)
+- 워커 병렬 처리 추가 (ThreadPoolExecutor, 기본 1개)
+- results dict 스레드 안전성 (Lock 추가)
+- 딜레이: API 20초 → Selenium 10초
+- 로그 날짜 형식 통일 (%m-%d %H:%M:%S)
+
+9. 대시보드 로그 줄 수
+------------------------------------------------
+- status.json recent_logs: 20줄 → 50줄
+
+수정된 파일
+------------------------------------------------
+[kakao-binance-bot]
+- app.py — 로그 50줄, _FORCE_SELENIUM 시스템모니터 대응
+- bonus_pick.py — Selenium 우선, 워커, Lock, 날짜 형식
+- version.py — A.2.0.5 / S.1.0.5
+- agent/agent.py — run_command, update_agent, 파일잠금 재시도, v1.1.3
+- 시스템모니터_원거리/agent_secure.py — 동일 기능, v1.1.3
+- 시스템서비스.spec — exe명 AgentService로 변경
+- server/routers/agent.py — 전체 명령 5분 만료
+- server/routers/dashboard.py — agent_version 목록 포함
+- server/static/app.js — 에이전트 버전 표시, 에이전트 배포 버튼, 보너스픽 워커
+
+[pickmob]
+- MyAccessibilityService.kt — 진단 로그, 고정 메시지 제외
+- MainActivity.kt — isMonitoring 설정
+- RelayService.kt — 채팅방 진입 재시도
+- build.gradle — v1.5.3
+
+배포 정보
+------------------------------------------------
+- API: A.2.0.5 / PicAssist_API.exe
+- Selenium: S.1.0.5 / PicAssist_Selenium.exe
+- 시스템모니터: SM.1.0.3 / SystemMonitor.exe
+- 에이전트: 1.1.3 / AgentService.exe
+- pickmob: v1.5.3
+
+남은 작업
+------------------------------------------------
+- 오프라인 PC 에이전트 수동 교체 (현장 방문 시)
+- 코드별 성공/실패 상세 기록 기능 (서버 저장)
+- 에이전트 자동 업데이트 bat 재시작 문제 해결
+- pickmob v1.5.3 빌드 + 설치 (고정 메시지 제외)
