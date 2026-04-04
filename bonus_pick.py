@@ -40,11 +40,11 @@ try:
 except ImportError:
     SELENIUM_OK = False
 
-# API 우선, Selenium 폴백
-if BONUS_API_OK:
-    click_no_more = click_no_more_api
-elif SELENIUM_OK:
+# Selenium 우선, API 폴백 (API는 429 차단 빈발)
+if SELENIUM_OK:
     click_no_more = click_no_more_selenium
+elif BONUS_API_OK:
+    click_no_more = click_no_more_api
 else:
     click_no_more = None
 
@@ -733,7 +733,7 @@ class BonusPickApp(tk.Frame):
             for i, acct in enumerate(accounts):
                 futures.append(pool.submit(_process, i, acct))
                 if i < len(accounts) - 1:
-                    delay = 20.0  # 429 차단 방지: 20초 간격
+                    delay = 10.0  # Selenium 방식: 10초 간격
                     if self._auto_cancel_event.wait(delay):
                         break
             concurrent.futures.wait(futures)
