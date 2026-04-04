@@ -115,7 +115,8 @@ function renderOverview() {
             <div class="stat-row"><span>계정</span><span class="val">${c.enabled_account_count || 0} / ${c.account_count || 0}</span></div>
             <div class="stat-row"><span>성공 / 실패</span><span class="val"><span class="text-ok">${c.success_count || 0}</span> / <span class="text-err">${c.fail_count || 0}</span></span></div>
             <div class="stat-row"><span>최근 코드</span><span class="val">${c.last_code || '-'}</span></div>
-            <div class="stat-row"><span>버전</span><span class="val">${c.app_version || '-'}</span></div>
+            <div class="stat-row"><span>앱</span><span class="val">${c.app_version || '-'}</span></div>
+            <div class="stat-row"><span>에이전트</span><span class="val">${c.agent_version || '-'}</span></div>
         </div>
     `).join("");
 

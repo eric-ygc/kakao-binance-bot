@@ -75,6 +75,7 @@ def list_computers(
             "success_count": status.success_count if status else 0,
             "fail_count": status.fail_count if status else 0,
             "app_version": status.app_version if status else "",
+            "agent_version": status.agent_version if status else "",
             "account_count": status.account_count if status else 0,
             "enabled_account_count": status.enabled_account_count if status else 0,
             "last_heartbeat": status.last_heartbeat.isoformat() if status and status.last_heartbeat else None,
