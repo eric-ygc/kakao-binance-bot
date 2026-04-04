@@ -260,10 +260,12 @@ async function selectPC(id) {
                     <input id="cfgSched1Stop" value="${schedules[1]?.stop || ''}" placeholder="종료" style="width:70px">
                 </div>
             </div>
-            <h3 class="mt-12">보너스픽 스케줄</h3>
+            <h3 class="mt-12">보너스픽 설정</h3>
             <div class="form-grid">
+                <label>워커 수</label>
+                <input id="cfgBonusWorkers" type="number" min="1" max="20" value="${bcfg.workers || 1}">
                 ${[0,1,2,3].map(i => `
-                    <label>시간 ${i+1}</label>
+                    <label>스케줄 ${i+1}</label>
                     <div style="display:flex;gap:8px;align-items:center">
                         <input type="checkbox" id="cfgBSched${i}En" ${bEnabled[i] ? 'checked' : ''}>
                         <input id="cfgBSched${i}Time" value="${bSchedules[i] || ''}" placeholder="HH:MM" style="width:70px">
@@ -444,6 +446,7 @@ async function saveConfig(id) {
     const bonusConfig = {
         site_urls: siteUrls,
         chrome_port: parseInt(document.getElementById("cfgChromePort").value) || 9222,
+        workers: parseInt(document.getElementById("cfgBonusWorkers").value) || 1,
         accounts: bonusAccounts,
         account_index: 0,
         schedule_times: [0,1,2,3].map(i => document.getElementById(`cfgBSched${i}Time`).value),
