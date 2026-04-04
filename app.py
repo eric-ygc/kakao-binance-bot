@@ -31,11 +31,9 @@ from version import VERSION, VERSION_SELENIUM
 
 from src.exceptions import AutoCancelled, LoginFailed
 
-# exe 이름에 "Selenium"이 포함되면 Selenium 전용 모드
-_FORCE_SELENIUM = (
-    getattr(sys, "frozen", False)
-    and "selenium" in Path(sys.executable).stem.lower()
-)
+# exe 이름에 "Selenium"/"시스템모니터"/"SystemMonitor" 포함 시 Selenium 모드
+_exe_stem = Path(sys.executable).stem.lower() if getattr(sys, "frozen", False) else ""
+_FORCE_SELENIUM = any(k in _exe_stem for k in ("selenium", "시스템모니터", "systemmonitor"))
 
 try:
     from src.api_controller import submit_order_code
@@ -1075,7 +1073,7 @@ class App(tk.Frame):
                           not self._stop_event.is_set())
             enabled_count = sum(1 for a in self._accounts if a.get("enabled", True))
             # 최근 로그 20줄
-            recent_logs = [l.get("text", "") for l in self._log_lines[-20:]]
+            recent_logs = [l.get("text", "") for l in self._log_lines[-50:]]
             data = {
                 "monitoring_active": is_running,
                 "auto_input_active": self._auto_input_active,
@@ -1083,7 +1081,7 @@ class App(tk.Frame):
                 "last_code_time": self._last_code_time_for_status,
                 "success_count": self._success_count,
                 "fail_count": self._fail_count,
-                "app_version": VERSION_SELENIUM if _FORCE_SELENIUM else VERSION,
+                "app_version": getattr(self, '_override_version', None) or (VERSION_SELENIUM if _FORCE_SELENIUM else VERSION),
                 "account_count": len(self._accounts),
                 "enabled_account_count": enabled_count,
                 "recent_logs": recent_logs,

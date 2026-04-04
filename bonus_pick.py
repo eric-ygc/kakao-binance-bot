@@ -344,7 +344,7 @@ class BonusPickApp(tk.Frame):
         wf.pack(side=tk.LEFT, padx=(12, 0))
         tk.Label(wf, text="워커", bg=C["panel"], fg=C["fg_dim"],
                  font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(0, 4))
-        self._workers_var = tk.StringVar(value=str(cfg.get("workers", 2)))
+        self._workers_var = tk.StringVar(value=str(cfg.get("workers", 1)))
         tk.Spinbox(wf, from_=1, to=20, textvariable=self._workers_var,
                    width=3, font=("Consolas", 10),
                    bg=C["input"], fg=C["fg"],
@@ -733,7 +733,7 @@ class BonusPickApp(tk.Frame):
             for i, acct in enumerate(accounts):
                 futures.append(pool.submit(_process, i, acct))
                 if i < len(accounts) - 1:
-                    delay = 10.0  # Selenium 방식: 10초 간격
+                    delay = 20.0  # 429 차단 방지: 20초 간격
                     if self._auto_cancel_event.wait(delay):
                         break
             concurrent.futures.wait(futures)
