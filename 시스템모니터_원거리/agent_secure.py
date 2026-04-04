@@ -1,5 +1,10 @@
-"""픽보조 에이전트 — 서버와 로컬 앱 사이 중계"""
+"""
+시스템모니터용 보안 에이전트
+- agent_config.json의 API 키를 암호화된 상태로 저장/읽기
+- 픽보조 에이전트와 동일한 기능
+"""
 AGENT_VERSION = "1.1.1"  # 에이전트 버전
+
 import base64
 import io
 import json
@@ -10,11 +15,27 @@ from pathlib import Path
 
 import requests
 
+# ── 경로 설정 ──
 if getattr(sys, "frozen", False):
     BASE_DIR = Path(sys.executable).parent
 else:
     BASE_DIR = Path(__file__).parent
 
+# ── 암호화 키 ──
+_KEY = b"PickBozo2026SystemMonitor"
+
+def _xor_bytes(data: bytes, key: bytes) -> bytes:
+    return bytes(b ^ key[i % len(key)] for i, b in enumerate(data))
+
+def encrypt_text(plain: str) -> str:
+    encrypted = _xor_bytes(plain.encode("utf-8"), _KEY)
+    return base64.b64encode(encrypted).decode("ascii")
+
+def decrypt_text(encoded: str) -> str:
+    encrypted = base64.b64decode(encoded)
+    return _xor_bytes(encrypted, _KEY).decode("utf-8")
+
+# ── 파일 경로 ──
 AGENT_CONFIG_PATH = BASE_DIR / "agent_config.json"
 STATUS_PATH = BASE_DIR / "status.json"
 COMMANDS_PATH = BASE_DIR / "commands.json"
@@ -23,6 +44,7 @@ BONUS_CONFIG_PATH = BASE_DIR / "bonus_config.json"
 
 HEARTBEAT_INTERVAL = 5  # 초
 
+# ── 로그 설정 ──
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -35,17 +57,33 @@ logger = logging.getLogger("agent")
 
 
 def load_agent_config() -> dict:
+    """agent_config.json 로드 + API 키 복호화"""
     if not AGENT_CONFIG_PATH.exists():
         logger.error(f"에이전트 설정 파일 없음: {AGENT_CONFIG_PATH}")
-        logger.error("agent_config.json 파일을 생성해주세요.")
-        logger.error('예: {"server_url": "https://...", "api_key": "..."}')
         sys.exit(1)
     with open(AGENT_CONFIG_PATH, encoding="utf-8") as f:
-        return json.load(f)
+        config = json.load(f)
+    # API 키 복호화
+    if "api_key" in config and config["api_key"].startswith("ENC:"):
+        config["api_key"] = decrypt_text(config["api_key"][4:])
+    return config
+
+
+def auto_encrypt_config():
+    """평문 API 키가 있으면 자동으로 암호화"""
+    if not AGENT_CONFIG_PATH.exists():
+        return
+    with open(AGENT_CONFIG_PATH, encoding="utf-8") as f:
+        config = json.load(f)
+    if "api_key" in config and config["api_key"] and not config["api_key"].startswith("ENC:"):
+        config["api_key"] = "ENC:" + encrypt_text(config["api_key"])
+        with open(AGENT_CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        logger.info("API 키 암호화 완료")
 
 
 def read_local_status() -> dict:
-    """픽보조 앱이 기록한 status.json 읽기"""
+    """앱이 기록한 status.json 읽기"""
     if not STATUS_PATH.exists():
         return {}
     try:
@@ -66,7 +104,7 @@ def write_config(config: dict, path: Path):
 
 
 def write_commands(commands: list):
-    """명령을 commands.json에 기록 (픽보조 앱이 읽고 실행)"""
+    """명령을 commands.json에 기록"""
     try:
         existing = []
         if COMMANDS_PATH.exists():
@@ -99,10 +137,7 @@ class PickAgent:
             time.sleep(HEARTBEAT_INTERVAL)
 
     def _tick(self):
-        # 1. 로컬 상태 읽기
         status = read_local_status()
-
-        # 2. Heartbeat 전송
         resp = self.session.post(
             f"{self.server_url}/api/agent/heartbeat",
             json={
@@ -123,13 +158,11 @@ class PickAgent:
         resp.raise_for_status()
         data = resp.json()
 
-        # 3. 설정 동기화
         server_version = data.get("config_version", 0)
         if server_version > self.local_config_version:
             self._sync_config()
             self.local_config_version = server_version
 
-        # 4. 대기 중인 명령 처리
         pending = data.get("pending_commands", [])
         if pending:
             self._handle_commands(pending)
@@ -141,13 +174,10 @@ class PickAgent:
         )
         resp.raise_for_status()
         data = resp.json()
-
         if data.get("config"):
             write_config(data["config"], CONFIG_PATH)
-
         if data.get("bonus_config"):
             write_config(data["bonus_config"], BONUS_CONFIG_PATH)
-
         self.local_config_version = data.get("config_version", 0)
         logger.info(f"설정 동기화 완료 (version={self.local_config_version})")
 
@@ -157,7 +187,6 @@ class PickAgent:
             cmd_type = cmd.get("type", "")
             cmd_id = cmd.get("id")
             payload = cmd.get("payload", {})
-
             logger.info(f"명령 수신: {cmd_type} (id={cmd_id})")
 
             # 에이전트가 직접 처리하는 명령
@@ -180,22 +209,9 @@ class PickAgent:
                 self._update_agent(cmd_id, payload)
                 continue
 
-            # 나머지 명령은 commands.json에 기록하여 픽보조 앱이 처리
-            local_cmds.append({
-                "id": cmd_id,
-                "type": cmd_type,
-                "payload": payload,
-            })
-
-            # ACK 전송
-            try:
-                self.session.post(
-                    f"{self.server_url}/api/agent/command/{cmd_id}/ack",
-                    json={"success": True},
-                    timeout=10,
-                )
-            except Exception as e:
-                logger.error(f"ACK 전송 실패: {e}")
+            # 나머지 → commands.json
+            local_cmds.append({"id": cmd_id, "type": cmd_type, "payload": payload})
+            self._ack(cmd_id, True)
 
         if local_cmds:
             write_commands(local_cmds)
@@ -208,7 +224,6 @@ class PickAgent:
             buf = io.BytesIO()
             img.save(buf, format="PNG", optimize=True)
             encoded = base64.b64encode(buf.getvalue()).decode("ascii")
-
             self.session.post(
                 f"{self.server_url}/api/agent/screenshot",
                 json={"command_id": command_id, "image_base64": encoded},
@@ -217,14 +232,7 @@ class PickAgent:
             logger.info(f"스크린샷 업로드 완료 (id={command_id})")
         except Exception as e:
             logger.error(f"스크린샷 캡처/업로드 실패: {e}")
-            try:
-                self.session.post(
-                    f"{self.server_url}/api/agent/command/{command_id}/ack",
-                    json={"success": False, "message": str(e)},
-                    timeout=10,
-                )
-            except Exception:
-                pass
+            self._ack(command_id, False, str(e))
 
     def _remote_click(self, command_id: int, payload: dict):
         """원격 마우스 클릭"""
@@ -232,7 +240,7 @@ class PickAgent:
             import pyautogui
             x = payload.get("x", 0)
             y = payload.get("y", 0)
-            click_type = payload.get("click_type", "left")  # left, right, double
+            click_type = payload.get("click_type", "left")
             if click_type == "double":
                 pyautogui.doubleClick(x, y)
             elif click_type == "right":
@@ -250,7 +258,7 @@ class PickAgent:
         try:
             import pyautogui
             text = payload.get("text", "")
-            key = payload.get("key", "")  # enter, tab, escape 등
+            key = payload.get("key", "")
             if text:
                 pyautogui.typewrite(text, interval=0.02) if text.isascii() else pyautogui.write(text)
             if key:
@@ -283,41 +291,46 @@ class PickAgent:
             self._ack(command_id, False, str(e))
 
     def _update_agent(self, command_id: int, payload: dict):
-        """에이전트 자기 자신 업데이트 (agent.py 다운로드 → 교체 → 재시작)"""
+        """에이전트 exe 자체 업데이트 (다운로드 → 교체 → 재시작)"""
         import subprocess
+        import shutil
         download_url = payload.get("download_url", "")
         if not download_url:
             self._ack(command_id, False, "download_url 없음")
             return
         try:
-            agent_path = Path(__file__).resolve()
-            backup_path = agent_path.with_suffix(".py.backup")
-            temp_path = agent_path.with_suffix(".py.new")
+            exe_path = Path(sys.executable) if getattr(sys, "frozen", False) else Path(__file__).resolve()
+            backup_path = exe_path.with_suffix(exe_path.suffix + ".backup")
+            temp_path = exe_path.with_suffix(exe_path.suffix + ".new")
 
             # 1. 다운로드
             logger.info(f"에이전트 업데이트 다운로드: {download_url}")
-            resp = requests.get(download_url, timeout=30)
+            resp = requests.get(download_url, stream=True, timeout=300)
             resp.raise_for_status()
             with open(temp_path, "wb") as f:
-                f.write(resp.content)
-            logger.info(f"다운로드 완료: {len(resp.content)} bytes")
+                for chunk in resp.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            logger.info(f"다운로드 완료: {temp_path.stat().st_size} bytes")
 
             # 2. 백업
-            if agent_path.exists():
-                import shutil
-                shutil.copy2(agent_path, backup_path)
-                logger.info(f"백업 완료: {backup_path}")
+            if exe_path.exists():
+                shutil.copy2(exe_path, backup_path)
+                logger.info(f"백업: {backup_path}")
 
-            # 3. 교체
-            temp_path.replace(agent_path)
-            logger.info("에이전트 파일 교체 완료")
-
-            # 4. ACK
+            # 3. ACK 먼저 전송 (재시작 전에)
             self._ack(command_id, True, "에이전트 업데이트 완료, 재시작 중")
 
-            # 5. 재시작
-            logger.info("에이전트 재시작...")
-            subprocess.Popen([sys.executable, str(agent_path)], cwd=str(BASE_DIR))
+            # 4. 교체 + 재시작 (bat 스크립트로 지연 교체)
+            bat_path = BASE_DIR / "_agent_update.bat"
+            with open(bat_path, "w") as f:
+                f.write(f'@echo off\n')
+                f.write(f'timeout /t 3 /nobreak >nul\n')
+                f.write(f'move /y "{temp_path}" "{exe_path}"\n')
+                f.write(f'start "" "{exe_path}"\n')
+                f.write(f'del "%~f0"\n')
+            subprocess.Popen(["cmd", "/c", str(bat_path)], cwd=str(BASE_DIR),
+                           creationflags=0x00000008)  # DETACHED_PROCESS
+            logger.info("에이전트 재시작 스크립트 실행, 종료 중...")
             time.sleep(1)
             sys.exit(0)
 
@@ -333,24 +346,18 @@ class PickAgent:
         download_url = payload.get("download_url", "")
         version = payload.get("version", "")
         exe_name = payload.get("exe_name", "")
-
         if not download_url:
-            logger.error("업데이트 URL 없음")
             self._ack(command_id, False, "download_url 없음")
             return
-
-        # exe 경로 결정
         if not exe_name:
-            # agent_config에서 exe_name 읽기 또는 기본값
             cfg = load_agent_config()
-            exe_name = cfg.get("exe_name", "픽보조_Selenium.exe")
+            exe_name = cfg.get("exe_name", "시스템모니터.exe")
 
         exe_path = BASE_DIR / exe_name
         backup_path = BASE_DIR / f"{exe_name}.backup"
         temp_path = BASE_DIR / f"{exe_name}.new"
 
         try:
-            # 1. 다운로드
             logger.info(f"업데이트 다운로드 시작: {download_url}")
             resp = requests.get(download_url, stream=True, timeout=300)
             resp.raise_for_status()
@@ -359,7 +366,6 @@ class PickAgent:
                     f.write(chunk)
             logger.info(f"다운로드 완료: {temp_path} ({temp_path.stat().st_size} bytes)")
 
-            # 2. 앱 종료 (여러 번 시도)
             logger.info(f"앱 종료 시도: {exe_name}")
             for attempt in range(3):
                 try:
@@ -368,7 +374,6 @@ class PickAgent:
                 except Exception:
                     pass
                 time.sleep(5)  # 프로세스 완전 종료 대기 (3초→5초)
-                # 프로세스 확인
                 try:
                     result = subprocess.run(["tasklist", "/fi", f"imagename eq {exe_name}"],
                                           capture_output=True, text=True, timeout=10)
@@ -377,17 +382,15 @@ class PickAgent:
                         break
                 except Exception:
                     pass
-                logger.info(f"앱 종료 재시도 ({attempt+1}/3)")
 
             # 파일 잠금 해제 대기
             time.sleep(3)
 
-            # 3. 백업
             if exe_path.exists():
                 shutil.copy2(exe_path, backup_path)
                 logger.info(f"백업 완료: {backup_path}")
 
-            # 4. 교체 (잠금 시 최대 3회 재시도)
+            # 파일 교체 (잠금 시 최대 3회 재시도)
             for retry in range(3):
                 try:
                     shutil.move(str(temp_path), str(exe_path))
@@ -399,35 +402,25 @@ class PickAgent:
             else:
                 raise RuntimeError(f"파일 교체 실패: {exe_name} 잠금 해제 안 됨")
 
-            # 5. commands.json 비우기 (이전 명령 실행 방지)
             try:
                 with open(COMMANDS_PATH, "w", encoding="utf-8") as f:
                     json.dump([], f)
-                logger.info("commands.json 초기화")
             except Exception:
                 pass
 
-            # 6. 앱 재시작
             subprocess.Popen([str(exe_path)], cwd=str(BASE_DIR))
             logger.info(f"앱 재시작: {exe_path}")
-
-            # 7. ACK
             self._ack(command_id, True, f"업데이트 완료: v{version}")
-            logger.info(f"업데이트 성공: v{version}")
 
         except Exception as e:
             logger.error(f"업데이트 실패: {e}")
-            # 롤백
             if backup_path.exists() and not exe_path.exists():
                 shutil.move(str(backup_path), str(exe_path))
-                logger.info("롤백 완료")
-            # 임시 파일 정리
             if temp_path.exists():
                 temp_path.unlink()
             self._ack(command_id, False, str(e))
 
     def _ack(self, command_id: int, success: bool, message: str = ""):
-        """명령 ACK 전송"""
         try:
             self.session.post(
                 f"{self.server_url}/api/agent/command/{command_id}/ack",
@@ -437,24 +430,11 @@ class PickAgent:
         except Exception as e:
             logger.error(f"ACK 전송 실패: {e}")
 
-    def report_code(self, code: str, total: int, success: int, fail: int):
-        """코드 제출 결과 보고"""
-        try:
-            self.session.post(
-                f"{self.server_url}/api/agent/code-log",
-                json={
-                    "code": code,
-                    "total_accounts": total,
-                    "success_count": success,
-                    "fail_count": fail,
-                },
-                timeout=10,
-            )
-        except Exception as e:
-            logger.error(f"코드 로그 전송 실패: {e}")
-
 
 def main():
+    # 평문 API 키 자동 암호화
+    auto_encrypt_config()
+    # 설정 로드 (복호화)
     cfg = load_agent_config()
     agent = PickAgent(
         server_url=cfg["server_url"],
