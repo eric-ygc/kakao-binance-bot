@@ -72,13 +72,11 @@ def heartbeat(
         except ValueError:
             pass
 
-    # 대기 중인 명령 조회 (5분 이상 오래된 submit_code 명령은 자동 만료)
-    # — 이전 코드로 실행되는 문제 방지
+    # 대기 중인 명령 조회 (5분 이상 오래된 명령은 전부 자동 만료)
     cutoff = now - datetime.timedelta(minutes=5)
     old_cmds = db.query(Command).filter(
         Command.computer_id == computer.id,
         Command.status == "pending",
-        Command.command_type == "submit_code",
         Command.created_at < cutoff,
     ).all()
     for old in old_cmds:
