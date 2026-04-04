@@ -699,6 +699,7 @@ class BonusPickApp(tk.Frame):
             f"━━ 실행 시작 | 활성 계정 {total}개 (워커 {workers}개 병렬) | {_now} ━━"))
 
         results = {}  # index → ("ok"|"fail"|"cancel", label)
+        results_lock = threading.Lock()
 
         def _process(i: int, acct: dict) -> None:
             acct_label = f"[{i+1}/{total}] {acct['email']}"
@@ -715,12 +716,15 @@ class BonusPickApp(tk.Frame):
                     status_cb=_status,
                     cancel_event=self._auto_cancel_event,
                 )
-                results[i] = ("ok", acct_label)
+                with results_lock:
+                    results[i] = ("ok", acct_label)
                 self._msg_queue.put(("ok", f"✓ 완료: {acct_label}"))
             except AutoCancelled:
-                results[i] = ("cancel", acct_label)
+                with results_lock:
+                    results[i] = ("cancel", acct_label)
             except Exception as e:
-                results[i] = ("fail", acct_label)
+                with results_lock:
+                    results[i] = ("fail", acct_label)
                 self._msg_queue.put(("error", f"✗ 실패: {acct_label} [{type(e).__name__}] — {e}"))
 
         # 워커 병렬 실행
