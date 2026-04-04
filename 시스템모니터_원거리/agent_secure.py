@@ -3,7 +3,7 @@
 - agent_config.json의 API 키를 암호화된 상태로 저장/읽기
 - 픽보조 에이전트와 동일한 기능
 """
-AGENT_VERSION = "1.1.1"  # 에이전트 버전
+AGENT_VERSION = "1.1.2"  # 에이전트 버전
 
 import base64
 import io
@@ -317,19 +317,45 @@ class PickAgent:
                 shutil.copy2(exe_path, backup_path)
                 logger.info(f"백업: {backup_path}")
 
-            # 3. ACK 먼저 전송 (재시작 전에)
+            # 3. 다운로드 검증
+            if temp_path.stat().st_size < 1000:
+                raise RuntimeError(f"다운로드 파일 크기 비정상: {temp_path.stat().st_size} bytes")
+
+            # 4. ACK 전송 (검증 통과 후)
             self._ack(command_id, True, "에이전트 업데이트 완료, 재시작 중")
 
-            # 4. 교체 + 재시작 (bat 스크립트로 지연 교체)
+            # 5. 교체 + 재시작 (bat 스크립트로 지연 교체)
             bat_path = BASE_DIR / "_agent_update.bat"
-            with open(bat_path, "w") as f:
-                f.write(f'@echo off\n')
-                f.write(f'timeout /t 3 /nobreak >nul\n')
-                f.write(f'move /y "{temp_path}" "{exe_path}"\n')
-                f.write(f'start "" "{exe_path}"\n')
-                f.write(f'del "%~f0"\n')
-            subprocess.Popen(["cmd", "/c", str(bat_path)], cwd=str(BASE_DIR),
-                           creationflags=0x00000008)  # DETACHED_PROCESS
+            # 경로를 짧은 이름으로 변환 시도 (한글 경로 대응)
+            try:
+                import ctypes
+                buf = ctypes.create_unicode_buffer(512)
+                ctypes.windll.kernel32.GetShortPathNameW(str(temp_path), buf, 512)
+                short_temp = buf.value or str(temp_path)
+                ctypes.windll.kernel32.GetShortPathNameW(str(exe_path), buf, 512)
+                short_exe = buf.value or str(exe_path)
+            except Exception:
+                short_temp = str(temp_path)
+                short_exe = str(exe_path)
+
+            with open(bat_path, "w", encoding="mbcs") as f:
+                f.write('@echo off\r\n')
+                f.write('ping 127.0.0.1 -n 5 >nul\r\n')
+                f.write(f'move /y "{short_temp}" "{short_exe}"\r\n')
+                f.write(f'start "" "{short_exe}"\r\n')
+                f.write('del "%~f0"\r\n')
+            # bat 경로도 short path 변환
+            try:
+                ctypes.windll.kernel32.GetShortPathNameW(str(bat_path), buf, 512)
+                short_bat = buf.value or str(bat_path)
+            except Exception:
+                short_bat = str(bat_path)
+            subprocess.Popen(
+                f'cmd /c "{short_bat}"',
+                cwd=str(BASE_DIR),
+                shell=True,
+                creationflags=0x00000208,  # CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS
+            )
             logger.info("에이전트 재시작 스크립트 실행, 종료 중...")
             time.sleep(1)
             sys.exit(0)
@@ -352,6 +378,14 @@ class PickAgent:
         if not exe_name:
             cfg = load_agent_config()
             exe_name = cfg.get("exe_name", "시스템모니터.exe")
+
+        # 에이전트 자신을 update_exe로 업데이트 시도 시 거부 (update_agent 사용)
+        if getattr(sys, "frozen", False):
+            my_name = Path(sys.executable).name
+            if exe_name.lower() == my_name.lower():
+                logger.warning(f"update_exe로 에이전트 자신 업데이트 거부: {exe_name} → update_agent 사용하세요")
+                self._ack(command_id, False, "에이전트는 update_agent로 업데이트하세요")
+                return
 
         exe_path = BASE_DIR / exe_name
         backup_path = BASE_DIR / f"{exe_name}.backup"

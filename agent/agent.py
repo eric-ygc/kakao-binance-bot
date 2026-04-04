@@ -1,5 +1,5 @@
 """픽보조 에이전트 — 서버와 로컬 앱 사이 중계"""
-AGENT_VERSION = "1.1.1"  # 에이전트 버전
+AGENT_VERSION = "1.1.2"  # 에이전트 버전
 import base64
 import io
 import json
@@ -344,6 +344,14 @@ class PickAgent:
             # agent_config에서 exe_name 읽기 또는 기본값
             cfg = load_agent_config()
             exe_name = cfg.get("exe_name", "픽보조_Selenium.exe")
+
+        # 에이전트 자신을 update_exe로 업데이트 시도 시 거부 (update_agent 사용)
+        if getattr(sys, "frozen", False):
+            my_name = Path(sys.executable).name
+            if exe_name.lower() == my_name.lower():
+                logger.warning(f"update_exe로 에이전트 자신 업데이트 거부: {exe_name} → update_agent 사용하세요")
+                self._ack(command_id, False, "에이전트는 update_agent로 업데이트하세요")
+                return
 
         exe_path = BASE_DIR / exe_name
         backup_path = BASE_DIR / f"{exe_name}.backup"
