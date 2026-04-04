@@ -4,9 +4,11 @@
 실행: python bonus_pick.py
 설정: bonus_config.json (자동 저장/복원)
 """
+import concurrent.futures
 import datetime
 import json
 import queue
+import random
 import sys
 import threading
 import tkinter as tk
@@ -336,6 +338,17 @@ class BonusPickApp(tk.Frame):
                                     command=self._stop_submit,
                                     state=tk.DISABLED)
         self._stop_btn.pack(side=tk.LEFT)
+
+        # 워커 수 설정
+        wf = tk.Frame(btn_row, bg=C["panel"])
+        wf.pack(side=tk.LEFT, padx=(12, 0))
+        tk.Label(wf, text="워커", bg=C["panel"], fg=C["fg_dim"],
+                 font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(0, 4))
+        self._workers_var = tk.StringVar(value=str(cfg.get("workers", 2)))
+        tk.Spinbox(wf, from_=1, to=20, textvariable=self._workers_var,
+                   width=3, font=("Consolas", 10),
+                   bg=C["input"], fg=C["fg"],
+                   buttonbackground=C["panel"]).pack(side=tk.LEFT)
 
         tk.Frame(ca, bg=C["border"], height=1).pack(fill=tk.X, pady=(12, 6))
 
@@ -675,25 +688,24 @@ class BonusPickApp(tk.Frame):
             self._msg_queue.put(("__done__", False))
             return
 
+        try:
+            workers = max(1, min(20, int(self._workers_var.get())))
+        except ValueError:
+            workers = 2
+
         total = len(accounts)
         _now = datetime.datetime.now().strftime("%H:%M:%S")
         self._msg_queue.put(("system",
-            f"━━ 실행 시작 | 활성 계정 {total}개 | {_now} ━━"))
+            f"━━ 실행 시작 | 활성 계정 {total}개 (워커 {workers}개 병렬) | {_now} ━━"))
 
-        success_count = 0
-        fail_count = 0
-        failed_accounts = []
+        results = {}  # index → ("ok"|"fail"|"cancel", label)
 
-        for i, acct in enumerate(accounts):
-            if self._auto_cancel_event.is_set():
-                self._msg_queue.put(("system", "── 취소됨 ──"))
-                break
-
+        def _process(i: int, acct: dict) -> None:
             acct_label = f"[{i+1}/{total}] {acct['email']}"
             self._msg_queue.put(("system", f"→ {acct_label} 처리 중..."))
 
             def _status(msg: str) -> None:
-                self._msg_queue.put(("system", f"  · {msg}"))
+                self._msg_queue.put(("system", f"  · [{i+1}] {msg}"))
 
             try:
                 click_no_more(
@@ -703,31 +715,49 @@ class BonusPickApp(tk.Frame):
                     status_cb=_status,
                     cancel_event=self._auto_cancel_event,
                 )
+                results[i] = ("ok", acct_label)
                 self._msg_queue.put(("ok", f"✓ 완료: {acct_label}"))
-                success_count += 1
             except AutoCancelled:
-                self._msg_queue.put(("system", "── 취소됨 ──"))
-                break
+                results[i] = ("cancel", acct_label)
             except Exception as e:
+                results[i] = ("fail", acct_label)
                 self._msg_queue.put(("error", f"✗ 실패: {acct_label} [{type(e).__name__}] — {e}"))
-                fail_count += 1
-                failed_accounts.append(acct)
+
+        # 워커 병렬 실행
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = []
+            for i, acct in enumerate(accounts):
+                futures.append(pool.submit(_process, i, acct))
+                if i < len(accounts) - 1:
+                    delay = 10.0  # Selenium 방식: 10초 간격
+                    if self._auto_cancel_event.wait(delay):
+                        break
+            concurrent.futures.wait(futures)
+
+        cancelled = any(v[0] == "cancel" for v in results.values())
+        success_count = sum(1 for v in results.values() if v[0] == "ok")
+        fail_count = sum(1 for v in results.values() if v[0] == "fail")
+
+        if cancelled:
+            self._msg_queue.put(("system", "── 취소됨 ──"))
 
         # ── 실패 계정 재시도 (1회) ──
-        if failed_accounts and not self._auto_cancel_event.is_set():
-            retry_total = len(failed_accounts)
+        failed_indices = [i for i, v in results.items() if v[0] == "fail"]
+        if failed_indices and not cancelled and not self._auto_cancel_event.is_set():
+            retry_total = len(failed_indices)
             retry_success = 0
             retry_fail = 0
             _now_r = datetime.datetime.now().strftime("%H:%M:%S")
             self._msg_queue.put(("system",
                 f"━━ 실패 {retry_total}건 재시도 시작 | {_now_r} ━━"))
 
-            for i, acct in enumerate(failed_accounts):
+            for r_idx, orig_i in enumerate(failed_indices):
                 if self._auto_cancel_event.is_set():
                     self._msg_queue.put(("system", "── 취소됨 ──"))
                     break
 
-                acct_label = f"[재시도 {i+1}/{retry_total}] {acct['email']}"
+                acct = accounts[orig_i]
+                acct_label = f"[재시도 {r_idx+1}/{retry_total}] {acct['email']}"
                 self._msg_queue.put(("system", f"→ {acct_label} 처리 중..."))
 
                 def _status_retry(msg: str) -> None:
@@ -943,9 +973,14 @@ class BonusPickApp(tk.Frame):
             port = int(self._port_var.get())
         except ValueError:
             port = 9222
+        try:
+            workers = int(self._workers_var.get())
+        except ValueError:
+            workers = 2
         return {
             "site_urls":        [v.get().strip() for v in self._site_url_vars],
             "chrome_port":      port,
+            "workers":          workers,
             "accounts":         self._accounts,
             "account_index":    self._account_idx,
             "schedule_times":   [tv.get().strip() for _, tv in self._schedules],
