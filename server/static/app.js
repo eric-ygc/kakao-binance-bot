@@ -842,10 +842,14 @@ function showUpdateModal() {
     modal.classList.add("show");
     document.getElementById("updateModalContent").innerHTML = `
         <h3>업데이트 배포</h3>
+        <div style="margin:12px 0;display:flex;gap:8px">
+            <button id="updateTypeApp" class="btn btn-primary" onclick="switchUpdateType('app')" style="flex:1">앱 배포</button>
+            <button id="updateTypeAgent" class="btn btn-secondary" onclick="switchUpdateType('agent')" style="flex:1">에이전트 배포</button>
+        </div>
         <div class="form-grid" style="margin:12px 0">
             <label>다운로드 URL</label>
             <input id="updateUrl" placeholder="https://github.com/.../픽보조_Selenium.exe" style="grid-column:span 1">
-            <label>exe 파일명</label>
+            <label id="lblExeName">exe 파일명</label>
             <input id="updateExeName" placeholder="픽보조_Selenium.exe" value="픽보조_Selenium.exe">
             <label>버전</label>
             <input id="updateVersion" placeholder="1.4.9">
@@ -861,6 +865,27 @@ function showUpdateModal() {
     `;
 }
 
+let _updateType = "app";  // "app" 또는 "agent"
+
+function switchUpdateType(type) {
+    _updateType = type;
+    const btnApp = document.getElementById("updateTypeApp");
+    const btnAgent = document.getElementById("updateTypeAgent");
+    const lblExeName = document.getElementById("lblExeName");
+    const exeInput = document.getElementById("updateExeName");
+    if (type === "agent") {
+        btnAgent.className = "btn btn-primary";
+        btnApp.className = "btn btn-secondary";
+        lblExeName.style.display = "none";
+        exeInput.style.display = "none";
+    } else {
+        btnApp.className = "btn btn-primary";
+        btnAgent.className = "btn btn-secondary";
+        lblExeName.style.display = "";
+        exeInput.style.display = "";
+    }
+}
+
 async function deployUpdate() {
     const url = document.getElementById("updateUrl").value.trim();
     const exeName = document.getElementById("updateExeName").value.trim();
@@ -874,16 +899,27 @@ async function deployUpdate() {
     let sent = 0;
     for (const cb of checked) {
         try {
-            await api("POST", `/api/computers/${cb.value}/command`, {
-                command_type: "update_exe",
-                payload: { download_url: url, exe_name: exeName, version: version },
-            });
+            if (_updateType === "agent") {
+                await api("POST", `/api/computers/${cb.value}/command`, {
+                    command_type: "update_agent",
+                    payload: { download_url: url },
+                });
+            } else {
+                await api("POST", `/api/computers/${cb.value}/command`, {
+                    command_type: "update_exe",
+                    payload: { download_url: url, exe_name: exeName, version: version },
+                });
+            }
             sent++;
         } catch (e) { /* skip */ }
     }
 
     document.getElementById("updateModal").classList.remove("show");
-    alert(`${sent}대 PC에 업데이트 명령 전송 완료!\n에이전트가 다운로드 → 교체 → 재시작합니다.`);
+    if (_updateType === "agent") {
+        alert(`${sent}대 PC에 에이전트 업데이트 전송 완료!\n다운로드 후 다음 재시작 시 적용됩니다.`);
+    } else {
+        alert(`${sent}대 PC에 앱 업데이트 전송 완료!\n에이전트가 다운로드 → 교체 → 재시작합니다.`);
+    }
 }
 
 
