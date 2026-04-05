@@ -1385,15 +1385,17 @@ class App(tk.Frame):
                 self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
                 self._code_detected_this_slot = True
 
-            # ── 실패 계정 자동 재시도 (로그인 실패 + 일반 오류) ────────
+            # ── 실패 계정 자동 재시도 (로그인 실패 + 일반 오류, 워커 병렬) ────────
             failed_indices = [i for i, v in results.items() if v[0] in ("login_fail", "fail")]
             if failed_indices and not cancelled and not self._auto_cancel_event.is_set():
                 retry_total = len(failed_indices)
                 _now_r = _dt.datetime.now().strftime("%H:%M:%S")
-                self._msg_queue.put(("system", f"── 실패 {retry_total}개 재시도 시작 | {_now_r} ──"))
-                for r_idx, orig_i in enumerate(failed_indices):
-                    if self._auto_cancel_event.is_set():
-                        break
+                self._msg_queue.put(("system", f"── 실패 {retry_total}개 재시도 시작 (워커 {workers}개) | {_now_r} ──"))
+
+                retry_results = {}
+                retry_lock = threading.Lock()
+
+                def _retry_process(r_idx: int, orig_i: int) -> None:
                     acct = accounts[orig_i]
                     acct_label_r = f"[재시도 {r_idx+1}/{retry_total}] {acct['email']}"
                     if proxy_pool:
@@ -1402,8 +1404,8 @@ class App(tk.Frame):
                         proxy_r = _valid_proxy(acct.get("proxy", ""))
                     self._msg_queue.put(("system", f"→ {acct_label_r} 처리 중..."))
 
-                    def _status_r(msg: str, idx=orig_i) -> None:
-                        self._msg_queue.put(("system", f"  · [재시도] {msg}"))
+                    def _status_r(msg: str) -> None:
+                        self._msg_queue.put(("system", f"  · [{r_idx+1}] {msg}"))
 
                     try:
                         submit_order_code(
@@ -1414,22 +1416,30 @@ class App(tk.Frame):
                             cancel_event=self._auto_cancel_event,
                             proxy=proxy_r,
                         )
-                        results[orig_i] = ("ok", acct_label_r)
+                        with retry_lock:
+                            retry_results[r_idx] = ("ok", acct_label_r)
                         self._msg_queue.put(("auto_ok", f"✓ 완료: {acct_label_r}"))
                     except AutoCancelled:
-                        results[orig_i] = ("cancel", acct_label_r)
-                        break
+                        with retry_lock:
+                            retry_results[r_idx] = ("cancel", acct_label_r)
                     except Exception as e:
-                        results[orig_i] = ("fail", acct_label_r)
+                        with retry_lock:
+                            retry_results[r_idx] = ("fail", acct_label_r)
                         self._msg_queue.put(("error", f"✗ 재시도 실패: {acct_label_r} [{type(e).__name__}] — {e}"))
 
-                    if r_idx < retry_total - 1:
-                        retry_delay = STAGGER_DELAY_API_RETRY
-                        if self._auto_cancel_event.wait(retry_delay):
-                            break
+                with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+                    futures = []
+                    for r_idx, orig_i in enumerate(failed_indices):
+                        futures.append(pool.submit(_retry_process, r_idx, orig_i))
+                        if r_idx < len(failed_indices) - 1:
+                            import random
+                            delay = random.uniform(*STAGGER_DELAY_API) if API_OK else STAGGER_DELAY
+                            if self._auto_cancel_event.wait(delay):
+                                break
+                    concurrent.futures.wait(futures)
 
-                cancelled = any(v[0] == "cancel" for v in results.values())
-                if cancelled:
+                retry_cancelled = any(v[0] == "cancel" for v in retry_results.values())
+                if retry_cancelled:
                     self._msg_queue.put(("system", "── 자동 입력 취소됨 ──"))
                     self._code_detected_this_slot = True
 

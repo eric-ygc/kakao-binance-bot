@@ -665,7 +665,7 @@ class BonusPickApp(tk.Frame):
         self._status_var.set("실행 중...")
         self._reset_steps()
 
-        now = datetime.datetime.now().strftime("%H:%M:%S")
+        now = datetime.datetime.now().strftime("%m-%d %H:%M:%S")
         self._run_history.insert(0, now)
         self._run_history = self._run_history[:8]
         self._history_var.set("\n".join(self._run_history))
@@ -691,10 +691,10 @@ class BonusPickApp(tk.Frame):
         try:
             workers = max(1, min(20, int(self._workers_var.get())))
         except ValueError:
-            workers = 2
+            workers = 1
 
         total = len(accounts)
-        _now = datetime.datetime.now().strftime("%H:%M:%S")
+        _now = datetime.datetime.now().strftime("%m-%d %H:%M:%S")
         self._msg_queue.put(("system",
             f"━━ 실행 시작 | 활성 계정 {total}개 (워커 {workers}개 병렬) | {_now} ━━"))
 
@@ -745,27 +745,24 @@ class BonusPickApp(tk.Frame):
         if cancelled:
             self._msg_queue.put(("system", "── 취소됨 ──"))
 
-        # ── 실패 계정 재시도 (1회) ──
+        # ── 실패 계정 재시도 (1회, 워커 병렬) ──
         failed_indices = [i for i, v in results.items() if v[0] == "fail"]
         if failed_indices and not cancelled and not self._auto_cancel_event.is_set():
             retry_total = len(failed_indices)
-            retry_success = 0
-            retry_fail = 0
-            _now_r = datetime.datetime.now().strftime("%H:%M:%S")
+            _now_r = datetime.datetime.now().strftime("%m-%d %H:%M:%S")
             self._msg_queue.put(("system",
-                f"━━ 실패 {retry_total}건 재시도 시작 | {_now_r} ━━"))
+                f"━━ 실패 {retry_total}건 재시도 시작 (워커 {workers}개) | {_now_r} ━━"))
 
-            for r_idx, orig_i in enumerate(failed_indices):
-                if self._auto_cancel_event.is_set():
-                    self._msg_queue.put(("system", "── 취소됨 ──"))
-                    break
+            retry_results = {}
+            retry_lock = threading.Lock()
 
+            def _retry_process(r_idx: int, orig_i: int) -> None:
                 acct = accounts[orig_i]
                 acct_label = f"[재시도 {r_idx+1}/{retry_total}] {acct['email']}"
                 self._msg_queue.put(("system", f"→ {acct_label} 처리 중..."))
 
                 def _status_retry(msg: str) -> None:
-                    self._msg_queue.put(("system", f"  · {msg}"))
+                    self._msg_queue.put(("system", f"  · [{r_idx+1}] {msg}"))
 
                 try:
                     click_no_more(
@@ -775,24 +772,38 @@ class BonusPickApp(tk.Frame):
                         status_cb=_status_retry,
                         cancel_event=self._auto_cancel_event,
                     )
+                    with retry_lock:
+                        retry_results[r_idx] = ("ok", acct_label)
                     self._msg_queue.put(("ok", f"✓ 재시도 완료: {acct_label}"))
-                    retry_success += 1
                 except AutoCancelled:
-                    self._msg_queue.put(("system", "── 취소됨 ──"))
-                    break
+                    with retry_lock:
+                        retry_results[r_idx] = ("cancel", acct_label)
                 except Exception as e:
+                    with retry_lock:
+                        retry_results[r_idx] = ("fail", acct_label)
                     self._msg_queue.put(("error", f"✗ 재시도 실패: {acct_label} — {e}"))
-                    retry_fail += 1
 
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = []
+                for r_idx, orig_i in enumerate(failed_indices):
+                    futures.append(pool.submit(_retry_process, r_idx, orig_i))
+                    if r_idx < len(failed_indices) - 1:
+                        delay = 10.0  # Selenium 방식: 10초 간격
+                        if self._auto_cancel_event.wait(delay):
+                            break
+                concurrent.futures.wait(futures)
+
+            retry_success = sum(1 for v in retry_results.values() if v[0] == "ok")
+            retry_fail = sum(1 for v in retry_results.values() if v[0] == "fail")
             success_count += retry_success
             fail_count = retry_fail
             self._msg_queue.put(("system",
-                f"━━ 재시도 완료 | 추가 성공 {retry_success} / 최종 실패 {retry_fail} | {datetime.datetime.now().strftime('%H:%M:%S')} ━━"))
+                f"━━ 재시도 완료 | 추가 성공 {retry_success} / 최종 실패 {retry_fail} | {datetime.datetime.now().strftime('%m-%d %H:%M:%S')} ━━"))
 
         tag = "ok" if fail_count == 0 else "system"
         self._msg_queue.put((
             tag,
-            f"━━ 완료 | 성공 {success_count} / 실패 {fail_count} / 총 {total} | {datetime.datetime.now().strftime('%H:%M:%S')} ━━",
+            f"━━ 완료 | 성공 {success_count} / 실패 {fail_count} / 총 {total} | {datetime.datetime.now().strftime('%m-%d %H:%M:%S')} ━━",
         ))
         self._run_records.append({
             "success":  success_count,
@@ -827,7 +838,7 @@ class BonusPickApp(tk.Frame):
         self._stop_btn.config(state=tk.DISABLED)
         self._update_step_display(len(STEPS) - 1, done=True)
         self._status_var.set(
-            f"완료  |  {datetime.datetime.now().strftime('%H:%M:%S')}")
+            f"완료  |  {datetime.datetime.now().strftime('%m-%d %H:%M:%S')}")
 
     # ------------------------------------------------------------------
     # 로그
