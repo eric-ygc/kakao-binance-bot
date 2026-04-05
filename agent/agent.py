@@ -1,5 +1,5 @@
 """픽보조 에이전트 — 서버와 로컬 앱 사이 중계"""
-AGENT_VERSION = "1.1.2"  # 에이전트 버전
+AGENT_VERSION = "1.1.4"  # 에이전트 버전
 import base64
 import io
 import json
@@ -367,16 +367,20 @@ class PickAgent:
                     f.write(chunk)
             logger.info(f"다운로드 완료: {temp_path} ({temp_path.stat().st_size} bytes)")
 
-            # 2. 앱 종료 (여러 번 시도)
-            logger.info(f"앱 종료 시도: {exe_name}")
+            # 2. 관련 프로세스 모두 종료 (한글/영문 이름 모두)
+            kill_names = {exe_name}
+            for name in ["픽보조.exe", "픽보조_Selenium.exe", "PicAssist_API.exe",
+                         "PicAssist_Selenium.exe", "시스템모니터.exe", "SystemMonitor.exe"]:
+                kill_names.add(name)
+            logger.info(f"앱 종료 시도: {exe_name} (관련 프로세스 전체)")
             for attempt in range(3):
-                try:
-                    subprocess.run(["taskkill", "/f", "/im", exe_name],
-                                 capture_output=True, timeout=10)
-                except Exception:
-                    pass
-                time.sleep(5)  # 프로세스 완전 종료 대기 (3초→5초)
-                # 프로세스 확인
+                for kname in kill_names:
+                    try:
+                        subprocess.run(["taskkill", "/f", "/im", kname],
+                                     capture_output=True, timeout=10)
+                    except Exception:
+                        pass
+                time.sleep(5)
                 try:
                     result = subprocess.run(["tasklist", "/fi", f"imagename eq {exe_name}"],
                                           capture_output=True, text=True, timeout=10)

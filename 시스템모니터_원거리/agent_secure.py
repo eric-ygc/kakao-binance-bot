@@ -3,7 +3,7 @@
 - agent_config.json의 API 키를 암호화된 상태로 저장/읽기
 - 픽보조 에이전트와 동일한 기능
 """
-AGENT_VERSION = "1.1.2"  # 에이전트 버전
+AGENT_VERSION = "1.1.4"  # 에이전트 버전
 
 import base64
 import io
@@ -291,74 +291,32 @@ class PickAgent:
             self._ack(command_id, False, str(e))
 
     def _update_agent(self, command_id: int, payload: dict):
-        """에이전트 exe 자체 업데이트 (다운로드 → 교체 → 재시작)"""
-        import subprocess
-        import shutil
+        """에이전트 자체 업데이트 (다운로드만, 다음 시작 시 자동 교체)"""
         download_url = payload.get("download_url", "")
         if not download_url:
             self._ack(command_id, False, "download_url 없음")
             return
         try:
             exe_path = Path(sys.executable) if getattr(sys, "frozen", False) else Path(__file__).resolve()
-            backup_path = exe_path.with_suffix(exe_path.suffix + ".backup")
-            temp_path = exe_path.with_suffix(exe_path.suffix + ".new")
+            pending_path = exe_path.with_suffix(exe_path.suffix + ".pending")
 
             # 1. 다운로드
             logger.info(f"에이전트 업데이트 다운로드: {download_url}")
             resp = requests.get(download_url, stream=True, timeout=300)
             resp.raise_for_status()
-            with open(temp_path, "wb") as f:
+            with open(pending_path, "wb") as f:
                 for chunk in resp.iter_content(chunk_size=8192):
                     f.write(chunk)
-            logger.info(f"다운로드 완료: {temp_path.stat().st_size} bytes")
+            logger.info(f"다운로드 완료: {pending_path.stat().st_size} bytes")
 
-            # 2. 백업
-            if exe_path.exists():
-                shutil.copy2(exe_path, backup_path)
-                logger.info(f"백업: {backup_path}")
+            # 2. 다운로드 검증
+            if pending_path.stat().st_size < 1000:
+                pending_path.unlink()
+                raise RuntimeError(f"다운로드 파일 크기 비정상")
 
-            # 3. 다운로드 검증
-            if temp_path.stat().st_size < 1000:
-                raise RuntimeError(f"다운로드 파일 크기 비정상: {temp_path.stat().st_size} bytes")
-
-            # 4. ACK 전송 (검증 통과 후)
-            self._ack(command_id, True, "에이전트 업데이트 완료, 재시작 중")
-
-            # 5. 교체 + 재시작 (bat 스크립트로 지연 교체)
-            bat_path = BASE_DIR / "_agent_update.bat"
-            # 경로를 짧은 이름으로 변환 시도 (한글 경로 대응)
-            try:
-                import ctypes
-                buf = ctypes.create_unicode_buffer(512)
-                ctypes.windll.kernel32.GetShortPathNameW(str(temp_path), buf, 512)
-                short_temp = buf.value or str(temp_path)
-                ctypes.windll.kernel32.GetShortPathNameW(str(exe_path), buf, 512)
-                short_exe = buf.value or str(exe_path)
-            except Exception:
-                short_temp = str(temp_path)
-                short_exe = str(exe_path)
-
-            with open(bat_path, "w", encoding="mbcs") as f:
-                f.write('@echo off\r\n')
-                f.write('ping 127.0.0.1 -n 5 >nul\r\n')
-                f.write(f'move /y "{short_temp}" "{short_exe}"\r\n')
-                f.write(f'start "" "{short_exe}"\r\n')
-                f.write('del "%~f0"\r\n')
-            # bat 경로도 short path 변환
-            try:
-                ctypes.windll.kernel32.GetShortPathNameW(str(bat_path), buf, 512)
-                short_bat = buf.value or str(bat_path)
-            except Exception:
-                short_bat = str(bat_path)
-            subprocess.Popen(
-                f'cmd /c "{short_bat}"',
-                cwd=str(BASE_DIR),
-                shell=True,
-                creationflags=0x00000208,  # CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS
-            )
-            logger.info("에이전트 재시작 스크립트 실행, 종료 중...")
-            time.sleep(1)
-            sys.exit(0)
+            # 3. ACK — 다음 재시작 시 적용됨
+            self._ack(command_id, True, "에이전트 업데이트 다운로드 완료 — 다음 재시작 시 적용")
+            logger.info("에이전트 업데이트 대기 중 (.pending) — 앱 업데이트 또는 재시작 시 자동 적용")
 
         except Exception as e:
             logger.error(f"에이전트 업데이트 실패: {e}")
@@ -400,14 +358,21 @@ class PickAgent:
                     f.write(chunk)
             logger.info(f"다운로드 완료: {temp_path} ({temp_path.stat().st_size} bytes)")
 
-            logger.info(f"앱 종료 시도: {exe_name}")
+            # 관련 프로세스 모두 종료 (한글/영문 이름 모두)
+            kill_names = {exe_name}
+            # 픽보조 관련 프로세스명 추가
+            for name in ["픽보조.exe", "픽보조_Selenium.exe", "PicAssist_API.exe",
+                         "PicAssist_Selenium.exe", "시스템모니터.exe", "SystemMonitor.exe"]:
+                kill_names.add(name)
+            logger.info(f"앱 종료 시도: {exe_name} (관련 프로세스 전체)")
             for attempt in range(3):
-                try:
-                    subprocess.run(["taskkill", "/f", "/im", exe_name],
-                                 capture_output=True, timeout=10)
-                except Exception:
-                    pass
-                time.sleep(5)  # 프로세스 완전 종료 대기 (3초→5초)
+                for kname in kill_names:
+                    try:
+                        subprocess.run(["taskkill", "/f", "/im", kname],
+                                     capture_output=True, timeout=10)
+                    except Exception:
+                        pass
+                time.sleep(5)
                 try:
                     result = subprocess.run(["tasklist", "/fi", f"imagename eq {exe_name}"],
                                           capture_output=True, text=True, timeout=10)
@@ -465,7 +430,32 @@ class PickAgent:
             logger.error(f"ACK 전송 실패: {e}")
 
 
+def apply_pending_update():
+    """시작 시 .pending 파일이 있으면 자동 교체"""
+    if not getattr(sys, "frozen", False):
+        return
+    import shutil
+    exe_path = Path(sys.executable)
+    pending_path = exe_path.with_suffix(exe_path.suffix + ".pending")
+    if not pending_path.exists():
+        return
+    try:
+        backup_path = exe_path.with_suffix(exe_path.suffix + ".backup")
+        shutil.copy2(exe_path, backup_path)
+        shutil.move(str(pending_path), str(exe_path))
+        logger.info(f"에이전트 자동 업데이트 적용: {pending_path.name} → {exe_path.name}")
+        # 새 exe로 재시작
+        import subprocess
+        subprocess.Popen([str(exe_path)], cwd=str(BASE_DIR))
+        time.sleep(1)
+        sys.exit(0)
+    except Exception as e:
+        logger.error(f"에이전트 자동 업데이트 적용 실패: {e}")
+
+
 def main():
+    # 대기 중인 에이전트 업데이트 적용
+    apply_pending_update()
     # 평문 API 키 자동 암호화
     auto_encrypt_config()
     # 설정 로드 (복호화)
