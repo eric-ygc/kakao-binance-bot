@@ -3,7 +3,7 @@
 - agent_config.json의 API 키를 암호화된 상태로 저장/읽기
 - 픽보조 에이전트와 동일한 기능
 """
-AGENT_VERSION = "1.1.4"  # 에이전트 버전
+AGENT_VERSION = "1.1.5"  # 에이전트 버전
 
 import base64
 import io
@@ -129,6 +129,9 @@ class PickAgent:
         logger.info(f"에이전트 시작 — 서버: {self.server_url}")
         while True:
             try:
+                # .pending 파일 감지 → 즉시 적용 + 재시작
+                if check_and_apply_pending():
+                    return  # 새 프로세스 시작됨, 현재 종료
                 self._tick()
             except requests.ConnectionError:
                 logger.warning("서버 연결 실패 — 5초 후 재시도")
@@ -430,32 +433,53 @@ class PickAgent:
             logger.error(f"ACK 전송 실패: {e}")
 
 
-def apply_pending_update():
-    """시작 시 .pending 파일이 있으면 자동 교체"""
+def check_and_apply_pending() -> bool:
+    """
+    .pending 파일이 있으면 자동 교체 + 재시작.
+    Windows에서 실행 중인 exe는 삭제/덮어쓰기 불가 → 이름 변경 후 교체.
+    반환: True면 새 프로세스 시작됨 (호출자는 종료해야 함)
+    """
     if not getattr(sys, "frozen", False):
-        return
+        return False
     import shutil
+    import subprocess
     exe_path = Path(sys.executable)
     pending_path = exe_path.with_suffix(exe_path.suffix + ".pending")
     if not pending_path.exists():
-        return
+        return False
     try:
-        backup_path = exe_path.with_suffix(exe_path.suffix + ".backup")
-        shutil.copy2(exe_path, backup_path)
+        old_path = exe_path.with_suffix(exe_path.suffix + ".old")
+        # 이전 .old 파일 삭제
+        if old_path.exists():
+            try:
+                old_path.unlink()
+            except Exception:
+                pass
+        # 실행 중인 exe 이름 변경 (Windows에서 가능)
+        exe_path.rename(old_path)
+        # .pending → 원래 이름으로 이동
         shutil.move(str(pending_path), str(exe_path))
-        logger.info(f"에이전트 자동 업데이트 적용: {pending_path.name} → {exe_path.name}")
-        # 새 exe로 재시작
-        import subprocess
+        logger.info(f"에이전트 업데이트 적용: {exe_path.name}")
+        # 새 exe 시작
         subprocess.Popen([str(exe_path)], cwd=str(BASE_DIR))
+        logger.info("새 에이전트 시작됨, 현재 프로세스 종료")
         time.sleep(1)
-        sys.exit(0)
+        import os
+        os._exit(0)
     except Exception as e:
-        logger.error(f"에이전트 자동 업데이트 적용 실패: {e}")
+        logger.error(f"에이전트 업데이트 적용 실패: {e}")
+        # 롤백: .old → 원래 이름
+        try:
+            if not exe_path.exists() and old_path.exists():
+                old_path.rename(exe_path)
+        except Exception:
+            pass
+    return False
 
 
 def main():
     # 대기 중인 에이전트 업데이트 적용
-    apply_pending_update()
+    check_and_apply_pending()
     # 평문 API 키 자동 암호화
     auto_encrypt_config()
     # 설정 로드 (복호화)
