@@ -1,0 +1,34 @@
+{
+  "room_name": "",
+  "poll_interval": 3.0,
+  "watch_sender": "",
+  "auto_input": false,
+  "chrome_port": 9222,
+  "workers": 2,
+  "site_urls": [
+    "https://dsj44.com/h5/#/login",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "accounts": [],
+  "account_index": 0,
+  "monitor_schedules": [
+    {
+      "enabled": false,
+      "start": "",
+      "stop": ""
+    },
+    {
+      "enabled": false,
+      "start": "",
+      "stop": ""
+    }
+  ]
+}
