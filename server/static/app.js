@@ -108,21 +108,22 @@ function renderOverview() {
     const prevResult = document.getElementById("globalCodeResult")?.innerHTML || "";
 
     const cards = computers.map(c => `
-        <div class="overview-card" onclick="selectPC('${c.id}')" style="cursor:pointer">
+        <div class="overview-card" ${userRole !== "operator" ? `onclick="selectPC('${c.id}')" style="cursor:pointer"` : ''}>
             <div class="card-header">
                 <span class="card-title">
                     ${c.display_name || c.id}
                     <span class="badge ${c.is_online ? 'online' : 'offline'}">
                         ${c.is_online ? '온라인' : '오프라인'}
                     </span>
-                    ${c.monitoring_active ? '<span class="badge monitoring">모니터링</span>' : ''}
                 </span>
             </div>
-            <div class="stat-row"><span>계정</span><span class="val">${c.enabled_account_count || 0} / ${c.account_count || 0}</span></div>
-            <div class="stat-row"><span>성공 / 실패</span><span class="val"><span class="text-ok">${c.success_count || 0}</span> / <span class="text-err">${c.fail_count || 0}</span></span></div>
-            <div class="stat-row"><span>최근 코드</span><span class="val">${c.last_code || '-'}</span></div>
-            <div class="stat-row"><span>앱</span><span class="val">${c.app_version || '-'}</span></div>
-            <div class="stat-row"><span>에이전트</span><span class="val">${c.agent_version || '-'}</span></div>
+            ${userRole !== "operator" ? `
+                <div class="stat-row"><span>계정</span><span class="val">${c.enabled_account_count || 0} / ${c.account_count || 0}</span></div>
+                <div class="stat-row"><span>성공 / 실패</span><span class="val"><span class="text-ok">${c.success_count || 0}</span> / <span class="text-err">${c.fail_count || 0}</span></span></div>
+                <div class="stat-row"><span>최근 코드</span><span class="val">${c.last_code || '-'}</span></div>
+                <div class="stat-row"><span>앱</span><span class="val">${c.app_version || '-'}</span></div>
+                <div class="stat-row"><span>에이전트</span><span class="val">${c.agent_version || '-'}</span></div>
+            ` : ''}
         </div>
     `).join("");
 
