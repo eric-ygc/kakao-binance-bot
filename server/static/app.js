@@ -3,6 +3,7 @@
 let computers = [];
 let selectedPC = null;
 let eventSource = null;
+let userRole = "admin1";  // admin1, admin2, operator
 
 // ── API 헬퍼 ──────────────────────────────────────────────────────────
 
@@ -26,11 +27,16 @@ async function api(method, path, body) {
 async function doLogin() {
     const pw = document.getElementById("loginPw").value;
     try {
-        await api("POST", "/api/auth/login", { password: pw });
+        const result = await api("POST", "/api/auth/login", { password: pw });
+        userRole = result.role || "admin1";
         document.getElementById("loginWrap").style.display = "none";
         document.getElementById("app").style.display = "block";
         loadComputers();
         startSSE();
+        // operator는 관리 기능 숨김
+        if (userRole === "operator") {
+            document.querySelectorAll(".admin-only").forEach(el => el.style.display = "none");
+        }
     } catch {
         document.getElementById("loginErr").textContent = "비밀번호가 틀립니다";
     }
@@ -124,8 +130,10 @@ function renderOverview() {
     div.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
             <h2 style="font-size:16px">전체 현황 (${computers.length}대)</h2>
-            <button class="btn btn-warn" onclick="showDistribute()">계정 분배</button>
-            <button class="btn btn-secondary" onclick="showUpdateModal()">업데이트 배포</button>
+            ${userRole !== "operator" ? `
+                <button class="btn btn-warn" onclick="showDistribute()">계정 분배</button>
+                <button class="btn btn-secondary" onclick="showUpdateModal()">업데이트 배포</button>
+            ` : ''}
         </div>
         <div class="detail-section" style="margin-bottom:16px">
             <h3>코드 일괄 전송 (온라인 ${onlineCount}대)</h3>

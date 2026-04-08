@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..auth import create_token, require_admin, verify_password
+from ..auth import create_token, require_admin, require_login, get_role, verify_password
 from ..config import HEARTBEAT_TIMEOUT
 from ..database import get_db
 from ..models import CodeLog, Command, Computer, ComputerStatus, Screenshot
@@ -29,7 +29,7 @@ def login(body: LoginRequest, response: Response):
     token = create_token(user)
     response.set_cookie("token", token, httponly=True, samesite="lax", max_age=86400)
     print(f"[LOGIN] {datetime.datetime.now():%Y-%m-%d %H:%M:%S} — {user} 로그인")
-    return {"ok": True}
+    return {"ok": True, "role": user}
 
 
 @router.post("/auth/logout")
@@ -50,7 +50,7 @@ def _check_online(status: ComputerStatus | None) -> bool:
 @router.get("/computers")
 def list_computers(
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    _=Depends(require_login),
 ):
     computers = db.query(Computer).order_by(Computer.display_name, Computer.id).all()
     result = []
@@ -215,8 +215,13 @@ def send_command(
     computer_id: str,
     body: SendCommandRequest,
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    _=Depends(require_login),
+    role: str = Depends(get_role),
 ):
+    # operator는 코드 전송만 허용
+    if role == "operator" and body.command_type != "submit_code":
+        raise HTTPException(status_code=403, detail="코드 전송만 가능합니다")
+
     computer = db.query(Computer).filter(Computer.id == computer_id).first()
     if not computer:
         raise HTTPException(status_code=404, detail="PC 없음")
