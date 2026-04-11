@@ -1120,10 +1120,14 @@ class App(tk.Frame):
                     self._stop_monitor(manual=True)
                 elif cmd_type == "submit_code":
                     code = payload.get("code", "")
+                    source = payload.get("source", "auto")
                     if code and CODE_PATTERN.match(code):
                         # 원격 명령은 중복 체크 초기화 (대시보드 수동 재전송 허용)
                         self._processed_codes.discard(code)
-                        self._append_log(f"📡 원격 코드 수신: {code}", tag="system")
+                        if source == "manual":
+                            self._append_log(f"📡 수동 전송 코드 수신: {code}", tag="system")
+                        else:
+                            self._append_log(f"📡 자동 감지 코드 수신: {code}", tag="system")
                         self._update_catch_panel(code, "원격", "서버")
         except Exception as e:
             logger.error(f"commands.json 처리 오류: {e}")

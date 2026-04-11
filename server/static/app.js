@@ -670,7 +670,7 @@ async function sendGlobalCode() {
         try {
             await api("POST", `/api/computers/${pc.id}/command`, {
                 command_type: "submit_code",
-                payload: { code },
+                payload: { code, source: "manual" },
             });
             sent++;
         } catch (e) { /* skip */ }
@@ -684,7 +684,7 @@ async function sendCode(id) {
     if (!code) return alert("코드를 입력하세요");
     await api("POST", `/api/computers/${id}/command`, {
         command_type: "submit_code",
-        payload: { code },
+        payload: { code, source: "manual" },
     });
     alert(`코드 ${code} 전송 완료`);
 }

@@ -373,6 +373,9 @@ def broadcast_code(
     if not code or len(code) != 9:
         return {"ok": False, "reason": "코드 없음"}
 
+    # 출처 판단: api_key가 있으면 모바일 자동, 없으면 대시보드 수동
+    source = "auto" if body.api_key else "manual"
+
     # 온라인 PC 전체에 코드 전송
     statuses = db.query(ComputerStatus).all()
     sent = 0
@@ -382,7 +385,7 @@ def broadcast_code(
         cmd = Command(
             computer_id=status.computer_id,
             command_type="submit_code",
-            payload=json.dumps({"code": code}),
+            payload=json.dumps({"code": code, "source": source}),
         )
         db.add(cmd)
         sent += 1
