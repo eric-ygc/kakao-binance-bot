@@ -182,6 +182,7 @@ async function selectPC(id) {
             </h2>
             <div class="btn-group" style="margin:0">
                 <button class="btn btn-secondary" onclick="renderOverview()">← 목록</button>
+                <button class="btn btn-primary" onclick="saveConfig('${id}')">💾 설정 저장</button>
                 <button class="btn btn-danger" onclick="deletePC('${id}')">PC 삭제</button>
             </div>
         </div>
