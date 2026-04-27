@@ -106,6 +106,12 @@ function renderOverview() {
     // 코드 입력값 + 결과 보존
     const prevCode = document.getElementById("globalCode")?.value || "";
     const prevResult = document.getElementById("globalCodeResult")?.innerHTML || "";
+    // 사이트 URL 입력값 보존
+    const prevUrls = [];
+    for (let i = 0; i < 10; i++) {
+        prevUrls.push(document.getElementById(`globalUrl${i}`)?.value || "");
+    }
+    const prevUrlResult = document.getElementById("globalUrlResult")?.innerHTML || "";
 
     const cards = computers.map(c => `
         <div class="overview-card" ${userRole !== "operator" ? `onclick="selectPC('${c.id}')" style="cursor:pointer"` : ''}>
@@ -168,6 +174,15 @@ function renderOverview() {
     // 코드 입력값 + 결과 복원
     if (prevCode) document.getElementById("globalCode").value = prevCode;
     if (prevResult) document.getElementById("globalCodeResult").innerHTML = prevResult;
+    // 사이트 URL 입력값 복원
+    for (let i = 0; i < 10; i++) {
+        const el = document.getElementById(`globalUrl${i}`);
+        if (el && prevUrls[i]) el.value = prevUrls[i];
+    }
+    if (prevUrlResult) {
+        const r = document.getElementById("globalUrlResult");
+        if (r) r.innerHTML = prevUrlResult;
+    }
 }
 
 // ── PC 상세 ───────────────────────────────────────────────────────────
