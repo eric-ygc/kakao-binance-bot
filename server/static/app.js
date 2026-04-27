@@ -141,9 +141,27 @@ function renderOverview() {
             <div style="display:flex;gap:8px;align-items:center">
                 <input id="globalCode" placeholder="코드 입력 (9자리)" style="padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--fg);font-size:14px;flex:1;max-width:240px">
                 <button class="btn btn-primary" onclick="sendGlobalCode()">전체 전송</button>
+                <button class="btn btn-danger" onclick="stopAllMonitoring()">⏸ 전체 정지</button>
                 <span id="globalCodeResult" style="font-size:12px"></span>
             </div>
         </div>
+        ${userRole !== "operator" ? `
+        <div class="detail-section" style="margin-bottom:16px">
+            <h3>사이트 URL 일괄 적용 (전체 PC)</h3>
+            <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
+                ${[0,1,2,3,4,5,6,7,8,9].map(i => `
+                    <div style="display:flex;gap:6px;align-items:center">
+                        <span style="width:60px;color:var(--fg-dim);font-size:12px">사이트 ${i+1}</span>
+                        <input id="globalUrl${i}" placeholder="https://..." style="padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--fg);font-size:13px;flex:1">
+                    </div>
+                `).join("")}
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+                <button class="btn btn-warn" onclick="applyGlobalUrls()">전체 PC에 적용</button>
+                <span id="globalUrlResult" style="font-size:12px"></span>
+            </div>
+        </div>
+        ` : ''}
         <div class="overview-grid">${cards || '<p class="text-dim">등록된 PC가 없습니다. + 추가 버튼을 눌러주세요.</p>'}</div>
     `;
 
@@ -678,6 +696,56 @@ async function sendGlobalCode() {
     }
     result.innerHTML = `<span style="color:var(--ok)">✓ ${sent}대 전송 완료 (코드: ${code})</span>`;
     document.getElementById("globalCode").value = "";
+}
+
+// 전체 PC 모니터링 정지
+async function stopAllMonitoring() {
+    const onlinePCs = computers.filter(c => c.is_online);
+    if (onlinePCs.length === 0) return alert("온라인 PC가 없습니다");
+    if (!confirm(`온라인 PC ${onlinePCs.length}대 전부 정지하시겠습니까?`)) return;
+
+    const result = document.getElementById("globalCodeResult");
+    result.innerHTML = `<span style="color:var(--fg-dim)">정지 중...</span>`;
+    let sent = 0;
+    for (const pc of onlinePCs) {
+        try {
+            await api("POST", `/api/computers/${pc.id}/command`, {
+                command_type: "stop_monitor",
+                payload: {},
+            });
+            sent++;
+        } catch (e) { /* skip */ }
+    }
+    result.innerHTML = `<span style="color:var(--ok)">⏸ ${sent}대 정지 완료</span>`;
+}
+
+// 사이트 URL 일괄 적용 (모든 PC)
+async function applyGlobalUrls() {
+    const urls = [];
+    for (let i = 0; i < 10; i++) {
+        urls.push(document.getElementById(`globalUrl${i}`).value.trim());
+    }
+    if (urls.every(u => !u)) return alert("URL을 1개 이상 입력하세요");
+    if (!confirm(`전체 PC ${computers.length}대에 사이트 URL을 적용하시겠습니까?\n(현재 설정 덮어쓰기)`)) return;
+
+    const result = document.getElementById("globalUrlResult");
+    result.innerHTML = `<span style="color:var(--fg-dim)">적용 중...</span>`;
+
+    let sent = 0;
+    for (const pc of computers) {
+        try {
+            const data = await api("GET", `/api/computers/${pc.id}`);
+            const config = data.config || {};
+            config.site_urls = urls;
+            await api("PUT", `/api/computers/${pc.id}/config`, {
+                config,
+                bonus_config: data.bonus_config || {},
+                display_name: data.display_name,
+            });
+            sent++;
+        } catch (e) { /* skip */ }
+    }
+    result.innerHTML = `<span style="color:var(--ok)">✓ ${sent}대 적용 완료</span>`;
 }
 
 async function sendCode(id) {
