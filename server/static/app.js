@@ -155,12 +155,15 @@ function renderOverview() {
         <div class="detail-section" style="margin-bottom:16px">
             <h3>사이트 URL 일괄 적용 (전체 PC)</h3>
             <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
-                ${[0,1,2,3,4,5,6,7,8,9].map(i => `
+                ${[0,1,2,3,4,5,6,7,8,9].map(i => {
+                    const saved = localStorage.getItem(`globalUrl${i}`) || "";
+                    return `
                     <div style="display:flex;gap:6px;align-items:center">
                         <span style="width:60px;color:var(--fg-dim);font-size:12px">사이트 ${i+1}</span>
-                        <input id="globalUrl${i}" placeholder="https://..." style="padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--fg);font-size:13px;flex:1">
+                        <input id="globalUrl${i}" value="${saved.replace(/"/g, '&quot;')}" placeholder="https://..." oninput="localStorage.setItem('globalUrl${i}', this.value)" style="padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--fg);font-size:13px;flex:1">
                     </div>
-                `).join("")}
+                    `;
+                }).join("")}
             </div>
             <div style="display:flex;gap:8px;align-items:center">
                 <button class="btn btn-warn" onclick="applyGlobalUrls()">전체 PC에 적용</button>
