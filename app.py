@@ -901,6 +901,17 @@ class App(tk.Frame):
             self._stop_event.set()
         self._auto_cancel_event.set()
         self._processed_codes.clear()
+        # 자동입력 진행 중이면 chromedriver 강제 종료 (즉시 중단)
+        if self._auto_input_active:
+            try:
+                import subprocess
+                subprocess.run(["taskkill", "/f", "/im", "chromedriver.exe"],
+                             capture_output=True, timeout=5)
+                subprocess.run(["taskkill", "/f", "/im", "undetected_chromedriver.exe"],
+                             capture_output=True, timeout=5)
+                self._append_log("── chromedriver 강제 종료 ──", tag="system")
+            except Exception as e:
+                logger.warning(f"chromedriver 종료 실패: {e}")
         if manual:
             self._code_detected_this_slot = True  # 수동 정지 시 스케줄러 재시작 방지
         self._start_btn.config(state=tk.NORMAL)

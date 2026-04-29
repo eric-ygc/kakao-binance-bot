@@ -679,6 +679,17 @@ class BonusPickApp(tk.Frame):
     def _stop_submit(self) -> None:
         self._auto_cancel_event.set()
         self._status_var.set("중지 요청...")
+        # chromedriver 강제 종료 (즉시 중단)
+        if self._running:
+            try:
+                import subprocess
+                subprocess.run(["taskkill", "/f", "/im", "chromedriver.exe"],
+                             capture_output=True, timeout=5)
+                subprocess.run(["taskkill", "/f", "/im", "undetected_chromedriver.exe"],
+                             capture_output=True, timeout=5)
+                self._append_log("── chromedriver 강제 종료 ──", tag="system")
+            except Exception as e:
+                logger.warning(f"chromedriver 종료 실패: {e}")
 
     def _run_auto_input(self, port: int, site_urls: list) -> None:
         accounts = [a for a in self._accounts if a.get("enabled", True)]
