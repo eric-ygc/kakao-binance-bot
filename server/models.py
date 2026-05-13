@@ -38,6 +38,7 @@ class ComputerStatus(Base):
     enabled_account_count = Column(Integer, default=0)
     agent_version = Column(String, default="")
     recent_logs = Column(Text, default="[]")
+    recent_errors = Column(Text, default="[]")
 
 
 class Command(Base):

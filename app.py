@@ -29,7 +29,8 @@ from src.message_monitor import run_monitor
 from src.message_parser import ChatMessage
 from version import VERSION, VERSION_SELENIUM
 
-from src.exceptions import AutoCancelled, LoginFailed
+from src.exceptions import AutoCancelled, LoginFailed, InvalidParameter
+from src.result_logger import classify_exception, write_result
 
 # exe 이름에 "Selenium"/"시스템모니터"/"SystemMonitor" 포함 시 Selenium 모드
 _exe_stem = Path(sys.executable).stem.lower() if getattr(sys, "frozen", False) else ""
@@ -189,6 +190,7 @@ class App(tk.Frame):
         self._last_code_time_for_status: str = ""
         self._success_count: int = 0
         self._fail_count: int = 0
+        self._recent_errors: list = []
 
         cfg = load_config()
         self._accounts: list = list(cfg.get("accounts", []))
@@ -1096,6 +1098,7 @@ class App(tk.Frame):
                 "account_count": len(self._accounts),
                 "enabled_account_count": enabled_count,
                 "recent_logs": recent_logs,
+                "recent_errors": self._recent_errors[-10:],
             }
             with open(STATUS_PATH, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False)
@@ -1364,6 +1367,18 @@ class App(tk.Frame):
                 def _status(msg: str) -> None:
                     self._msg_queue.put(("system", f"  · [{i+1}] {msg}"))
 
+                def _log_err(stage: str, error_type: str, msg: str) -> None:
+                    entry = {
+                        "time": datetime.datetime.now().strftime("%H:%M:%S"),
+                        "email": acct["email"], "code": code,
+                        "stage": stage, "error_type": error_type,
+                        "message": msg[:200], "result": "실패",
+                    }
+                    write_result(BASE_DIR, "픽", entry)
+                    self._recent_errors.append(entry)
+                    if len(self._recent_errors) > 30:
+                        self._recent_errors = self._recent_errors[-30:]
+
                 try:
                     submit_order_code(
                         code, port, site_urls,
@@ -1375,14 +1390,26 @@ class App(tk.Frame):
                     )
                     results[i] = ("ok", acct_label)
                     self._msg_queue.put(("auto_ok", f"✓ 완료: {acct_label}"))
+                    write_result(BASE_DIR, "픽", {
+                        "time": datetime.datetime.now().strftime("%H:%M:%S"),
+                        "email": acct["email"], "code": code,
+                        "stage": "완료", "error_type": "", "message": "", "result": "성공",
+                    })
                 except AutoCancelled:
                     results[i] = ("cancel", acct_label)
                 except LoginFailed as e:
                     results[i] = ("login_fail", acct_label)
                     self._msg_queue.put(("error", f"✗ 로그인 실패: {acct_label} — {e}"))
-                except Exception as e:
+                    _log_err("로그인", "로그인 실패", str(e))
+                except InvalidParameter as e:
                     results[i] = ("fail", acct_label)
-                    self._msg_queue.put(("error", f"✗ 실패: {acct_label} [{type(e).__name__}] — {e}"))
+                    self._msg_queue.put(("error", f"✗ 코드 무효: {acct_label} — {e}"))
+                    _log_err("코드 입력", "코드 무효", str(e))
+                except Exception as e:
+                    stage, error_type = classify_exception(e)
+                    results[i] = ("fail", acct_label)
+                    self._msg_queue.put(("error", f"✗ 실패: {acct_label} [{error_type}] — {str(e)[:100]}"))
+                    _log_err(stage, error_type, str(e))
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
                 futures = []
@@ -1422,6 +1449,18 @@ class App(tk.Frame):
                     def _status_r(msg: str) -> None:
                         self._msg_queue.put(("system", f"  · [{r_idx+1}] {msg}"))
 
+                    def _log_err_r(stage: str, error_type: str, msg: str) -> None:
+                        entry = {
+                            "time": datetime.datetime.now().strftime("%H:%M:%S"),
+                            "email": acct["email"], "code": code,
+                            "stage": stage, "error_type": error_type,
+                            "message": msg[:200], "result": "재시도실패",
+                        }
+                        write_result(BASE_DIR, "픽", entry)
+                        self._recent_errors.append(entry)
+                        if len(self._recent_errors) > 30:
+                            self._recent_errors = self._recent_errors[-30:]
+
                     try:
                         submit_order_code(
                             code, port, site_urls,
@@ -1437,10 +1476,22 @@ class App(tk.Frame):
                     except AutoCancelled:
                         with retry_lock:
                             retry_results[r_idx] = ("cancel", acct_label_r)
-                    except Exception as e:
+                    except LoginFailed as e:
                         with retry_lock:
                             retry_results[r_idx] = ("fail", acct_label_r)
-                        self._msg_queue.put(("error", f"✗ 재시도 실패: {acct_label_r} [{type(e).__name__}] — {e}"))
+                        self._msg_queue.put(("error", f"✗ 재시도 실패: {acct_label_r} [로그인 실패] — {e}"))
+                        _log_err_r("로그인", "로그인 실패", str(e))
+                    except InvalidParameter as e:
+                        with retry_lock:
+                            retry_results[r_idx] = ("fail", acct_label_r)
+                        self._msg_queue.put(("error", f"✗ 재시도 실패: {acct_label_r} [코드 무효] — {e}"))
+                        _log_err_r("코드 입력", "코드 무효", str(e))
+                    except Exception as e:
+                        stage_r, error_type_r = classify_exception(e)
+                        with retry_lock:
+                            retry_results[r_idx] = ("fail", acct_label_r)
+                        self._msg_queue.put(("error", f"✗ 재시도 실패: {acct_label_r} [{error_type_r}] — {str(e)[:100]}"))
+                        _log_err_r(stage_r, error_type_r, str(e))
 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
                     futures = []

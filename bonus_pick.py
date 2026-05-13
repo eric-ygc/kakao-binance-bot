@@ -26,7 +26,8 @@ sys.path.insert(0, str(BASE_DIR))
 from src.logger_config import setup_logger
 from version import VERSION
 
-from src.exceptions import AutoCancelled
+from src.exceptions import AutoCancelled, LoginFailed
+from src.result_logger import classify_exception, write_result
 
 try:
     from src.api_controller import click_no_more as click_no_more_api
@@ -147,6 +148,7 @@ class BonusPickApp(tk.Frame):
         self._auto_cancel_event: threading.Event = threading.Event()
         self._msg_queue: queue.Queue = queue.Queue()
         self._running: bool = False
+        self._recent_errors: list = []
         self._run_history: list = []       # 실행 시각 문자열 목록
         self._log_lines: list = []
         self._run_records: list = []       # {success, fail, datetime}
@@ -719,6 +721,18 @@ class BonusPickApp(tk.Frame):
             def _status(msg: str) -> None:
                 self._msg_queue.put(("system", f"  · [{i+1}] {msg}"))
 
+            def _log_err_b(stage: str, error_type: str, msg: str) -> None:
+                entry = {
+                    "time": datetime.datetime.now().strftime("%H:%M:%S"),
+                    "email": acct["email"], "code": "",
+                    "stage": stage, "error_type": error_type,
+                    "message": msg[:200], "result": "실패",
+                }
+                write_result(BASE_DIR, "보너스", entry)
+                self._recent_errors.append(entry)
+                if len(self._recent_errors) > 30:
+                    self._recent_errors = self._recent_errors[-30:]
+
             try:
                 click_no_more(
                     port, site_urls,
@@ -733,10 +747,17 @@ class BonusPickApp(tk.Frame):
             except AutoCancelled:
                 with results_lock:
                     results[i] = ("cancel", acct_label)
-            except Exception as e:
+            except LoginFailed as e:
                 with results_lock:
                     results[i] = ("fail", acct_label)
-                self._msg_queue.put(("error", f"✗ 실패: {acct_label} [{type(e).__name__}] — {e}"))
+                self._msg_queue.put(("error", f"✗ 로그인 실패: {acct_label} — {e}"))
+                _log_err_b("로그인", "로그인 실패", str(e))
+            except Exception as e:
+                stage_b, error_type_b = classify_exception(e)
+                with results_lock:
+                    results[i] = ("fail", acct_label)
+                self._msg_queue.put(("error", f"✗ 실패: {acct_label} [{error_type_b}] — {str(e)[:100]}"))
+                _log_err_b(stage_b, error_type_b, str(e))
 
         # 워커 병렬 실행
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
@@ -775,6 +796,18 @@ class BonusPickApp(tk.Frame):
                 def _status_retry(msg: str) -> None:
                     self._msg_queue.put(("system", f"  · [{r_idx+1}] {msg}"))
 
+                def _log_err_br(stage: str, error_type: str, msg: str) -> None:
+                    entry = {
+                        "time": datetime.datetime.now().strftime("%H:%M:%S"),
+                        "email": acct["email"], "code": "",
+                        "stage": stage, "error_type": error_type,
+                        "message": msg[:200], "result": "재시도실패",
+                    }
+                    write_result(BASE_DIR, "보너스", entry)
+                    self._recent_errors.append(entry)
+                    if len(self._recent_errors) > 30:
+                        self._recent_errors = self._recent_errors[-30:]
+
                 try:
                     click_no_more(
                         port, site_urls,
@@ -789,10 +822,17 @@ class BonusPickApp(tk.Frame):
                 except AutoCancelled:
                     with retry_lock:
                         retry_results[r_idx] = ("cancel", acct_label)
-                except Exception as e:
+                except LoginFailed as e:
                     with retry_lock:
                         retry_results[r_idx] = ("fail", acct_label)
-                    self._msg_queue.put(("error", f"✗ 재시도 실패: {acct_label} — {e}"))
+                    self._msg_queue.put(("error", f"✗ 재시도 실패: {acct_label} [로그인 실패] — {e}"))
+                    _log_err_br("로그인", "로그인 실패", str(e))
+                except Exception as e:
+                    stage_br, error_type_br = classify_exception(e)
+                    with retry_lock:
+                        retry_results[r_idx] = ("fail", acct_label)
+                    self._msg_queue.put(("error", f"✗ 재시도 실패: {acct_label} [{error_type_br}] — {str(e)[:100]}"))
+                    _log_err_br(stage_br, error_type_br, str(e))
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
                 futures = []

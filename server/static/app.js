@@ -408,6 +408,26 @@ async function selectPC(id) {
             </div>
         </div>
 
+        <!-- 에러 로그 -->
+        <div class="detail-section">
+            <h3>최근 에러 로그</h3>
+            <table class="log-table">
+                <thead><tr><th>시간</th><th>계정</th><th>코드</th><th>단계</th><th>에러 종류</th><th>메시지</th></tr></thead>
+                <tbody>
+                    ${(data.status.recent_errors || []).slice().reverse().map(e => `
+                        <tr>
+                            <td>${e.time || ''}</td>
+                            <td style="font-size:11px">${(e.email||'').split('@')[0]}</td>
+                            <td style="font-family:Consolas">${e.code||''}</td>
+                            <td>${e.stage||''}</td>
+                            <td class="text-err">${e.error_type||''}</td>
+                            <td style="font-size:10px;color:var(--fg-dim);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(e.message||'').replace(/"/g,"'")}">${e.message||''}</td>
+                        </tr>
+                    `).join("") || '<tr><td colspan="6" class="text-dim">에러 없음</td></tr>'}
+                </tbody>
+            </table>
+        </div>
+
         <!-- 코드 제출 로그 -->
         <div class="detail-section">
             <h3>코드 제출 로그</h3>

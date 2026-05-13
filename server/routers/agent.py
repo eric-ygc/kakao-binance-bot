@@ -33,6 +33,7 @@ class HeartbeatRequest(BaseModel):
     enabled_account_count: int = 0
     agent_version: str = ""
     recent_logs: list = []
+    recent_errors: list = []
 
 
 @router.post("/heartbeat")
@@ -65,6 +66,8 @@ def heartbeat(
     status.agent_version = body.agent_version
     if body.recent_logs:
         status.recent_logs = json.dumps(body.recent_logs, ensure_ascii=False)
+    if body.recent_errors is not None:
+        status.recent_errors = json.dumps(body.recent_errors, ensure_ascii=False)
 
     if body.last_code_time:
         try:
