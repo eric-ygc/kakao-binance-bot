@@ -308,7 +308,11 @@ def _go_home(driver, wait, _st, cancel_event=None) -> None:
     # 이미 #/home 에 있으면 네비게이션 생략 — 미러사이트(dexvip.shop 등) 도메인 보존
     if PC_HOST in driver.current_url or "#/home" not in driver.current_url:
         _st("h5 홈으로 이동 중...")
-        driver.get(HOME_URL)
+        # 현재 도메인 기준으로 홈 URL 생성 (미러사이트 도메인 유지)
+        from urllib.parse import urlparse
+        _p = urlparse(driver.current_url)
+        _target = f"{_p.scheme}://{_p.netloc}/h5/#/home" if _p.netloc else HOME_URL
+        driver.get(_target)
         time.sleep(1)
         # 홈 이동 후 로그인 페이지로 튕긴 경우 → 세션 만료
         if "login" in driver.current_url.lower():
